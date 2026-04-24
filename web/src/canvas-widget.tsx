@@ -1,0 +1,353 @@
+import "@/index.css";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { useDisplayMode } from "skybridge/web";
+import { useToolInfo } from "./helpers.js";
+
+const CANVAS_SIZE = 256;
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 32;
+const EMPTY_R = 240;
+const EMPTY_G = 240;
+const EMPTY_B = 240;
+
+type WidgetMeta = {
+  supabase: { url: string; anonKey: string };
+  palette: string[];
+  paletteNames: string[];
+};
+
+type PixelRow = { x: number; y: number; color: number };
+
+function hexToRgb(hex: string): [number, number, number] {
+  const m = hex.replace("#", "");
+  return [
+    parseInt(m.slice(0, 2), 16),
+    parseInt(m.slice(2, 4), 16),
+    parseInt(m.slice(4, 6), 16),
+  ];
+}
+
+export function CanvasWidget() {
+  const info = useToolInfo<"canvas">();
+  const meta = info.responseMetadata as unknown as WidgetMeta | undefined;
+  const [displayMode, setDisplayMode] = useDisplayMode();
+  const isFullscreen = displayMode === "fullscreen";
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const outerRef = useRef<HTMLDivElement | null>(null);
+  const pixelsRef = useRef<Int16Array>(
+    new Int16Array(CANVAS_SIZE * CANVAS_SIZE).fill(-1),
+  );
+  // While the initial fetch is still running, realtime events are buffered
+  // here (cell index → color). Replayed onto the fetched buffer at completion
+  // so they aren't wiped.
+  const fetchBufferRef = useRef<Map<number, number> | null>(null);
+  const [live, setLive] = useState(false);
+  const [placedCount, setPlacedCount] = useState(0);
+  const [outerSize, setOuterSize] = useState({ w: 0, h: 0 });
+  // Bumped whenever pixelsRef is bulk-replaced, triggering a full redraw.
+  const [snapshotVersion, setSnapshotVersion] = useState(0);
+
+  // Pan + zoom.
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStart = useRef<{
+    mx: number;
+    my: number;
+    ox: number;
+    oy: number;
+  } | null>(null);
+
+  const paletteRgb = useMemo(
+    () => (meta?.palette ?? []).map(hexToRgb),
+    [meta?.palette],
+  );
+  const paletteRgbRef = useRef(paletteRgb);
+  paletteRgbRef.current = paletteRgb;
+
+  function drawAll() {
+    const canvas = canvasRef.current;
+    const pal = paletteRgbRef.current;
+    if (!canvas || pal.length === 0) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const img = ctx.createImageData(CANVAS_SIZE, CANVAS_SIZE);
+    const pixels = pixelsRef.current;
+    for (let i = 0; i < pixels.length; i++) {
+      const c = pixels[i];
+      const o = i * 4;
+      if (c < 0) {
+        img.data[o] = EMPTY_R;
+        img.data[o + 1] = EMPTY_G;
+        img.data[o + 2] = EMPTY_B;
+        img.data[o + 3] = 255;
+      } else {
+        const rgb = pal[c] ?? [0, 0, 0];
+        img.data[o] = rgb[0];
+        img.data[o + 1] = rgb[1];
+        img.data[o + 2] = rgb[2];
+        img.data[o + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  function drawOne(x: number, y: number, color: number) {
+    const canvas = canvasRef.current;
+    const pal = paletteRgbRef.current;
+    if (!canvas || pal.length === 0) return;
+    if (x < 0 || y < 0 || x >= CANVAS_SIZE || y >= CANVAS_SIZE) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const rgb = pal[color] ?? [0, 0, 0];
+    ctx.fillStyle = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+    ctx.fillRect(x, y, 1, 1);
+  }
+
+  // Measure outer — base scale = min(w,h) / CANVAS_SIZE at zoom=1.
+  useEffect(() => {
+    const el = outerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0].contentRect;
+      setOuterSize({ w: r.width, h: r.height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Paginated fetch so we bypass PostgREST's default 1000-row cap.
+  // Buffer realtime events during the fetch so they don't get wiped.
+  useEffect(() => {
+    if (!meta?.supabase?.url || !meta?.supabase?.anonKey) return;
+    let cancelled = false;
+    fetchBufferRef.current = new Map();
+    const client = createClient(meta.supabase.url, meta.supabase.anonKey, {
+      auth: { persistSession: false },
+    });
+
+    (async () => {
+      const buf = new Int16Array(CANVAS_SIZE * CANVAS_SIZE).fill(-1);
+      let count = 0;
+      const pageSize = 10000;
+      let from = 0;
+      while (!cancelled) {
+        const { data, error } = await client
+          .from("pixels")
+          .select("x, y, color")
+          .range(from, from + pageSize - 1);
+        if (cancelled) return;
+        if (error) {
+          console.warn("[canvas] fetch failed:", error);
+          fetchBufferRef.current = null;
+          return;
+        }
+        const rows = data ?? [];
+        for (const row of rows) {
+          buf[row.y * CANVAS_SIZE + row.x] = row.color;
+          count++;
+        }
+        if (rows.length < pageSize) break;
+        from += pageSize;
+      }
+      if (cancelled) return;
+      // Replay realtime events that landed during the fetch.
+      const pending = fetchBufferRef.current;
+      if (pending) {
+        for (const [cell, color] of pending) {
+          if (buf[cell] < 0 && color >= 0) count++;
+          buf[cell] = color;
+        }
+      }
+      fetchBufferRef.current = null;
+      pixelsRef.current = buf;
+      setPlacedCount(count);
+      setSnapshotVersion((v) => v + 1);
+    })();
+
+    return () => {
+      cancelled = true;
+      fetchBufferRef.current = null;
+    };
+  }, [meta?.supabase?.url, meta?.supabase?.anonKey]);
+
+  // Full redraw when snapshot changes OR palette arrives.
+  useEffect(() => {
+    drawAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshotVersion, paletteRgb.length]);
+
+  // Realtime subscription — other clients' writes + our own confirmations.
+  useEffect(() => {
+    if (!meta?.supabase?.url || !meta?.supabase?.anonKey) return;
+    const client: SupabaseClient = createClient(
+      meta.supabase.url,
+      meta.supabase.anonKey,
+      {
+        auth: { persistSession: false },
+        realtime: { params: { eventsPerSecond: 30 } },
+      },
+    );
+    const channel = client
+      .channel("pixels-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "pixels" },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as PixelRow | undefined;
+          if (!row) return;
+          const idx = row.y * CANVAS_SIZE + row.x;
+          const prev = pixelsRef.current[idx];
+          pixelsRef.current[idx] = row.color;
+          // If a fetch is in flight, stash the event so it survives the
+          // buffer replacement at fetch-completion.
+          if (fetchBufferRef.current) {
+            fetchBufferRef.current.set(idx, row.color);
+          }
+          if (prev < 0 && row.color >= 0) {
+            setPlacedCount((n) => n + 1);
+          }
+          drawOne(row.x, row.y, row.color);
+        },
+      )
+      .subscribe((status) => {
+        setLive(status === "SUBSCRIBED");
+      });
+    return () => {
+      client.removeChannel(channel);
+    };
+  }, [meta?.supabase?.url, meta?.supabase?.anonKey]);
+
+  // Pan + zoom transforms.
+  const baseScale =
+    outerSize.w > 0 && outerSize.h > 0
+      ? Math.min(outerSize.w, outerSize.h) / CANVAS_SIZE
+      : 1;
+  const totalScale = baseScale * zoom;
+  const centerX = (outerSize.w - CANVAS_SIZE * totalScale) / 2;
+  const centerY = (outerSize.h - CANVAS_SIZE * totalScale) / 2;
+
+  function resetView() {
+    setZoom(1);
+    setOffset({ x: 0, y: 0 });
+  }
+
+  function onWheel(e: React.WheelEvent<HTMLDivElement>) {
+    if (!outerRef.current) return;
+    e.preventDefault();
+    const rect = outerRef.current.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    let rawDelta = e.deltaY;
+    if (e.deltaMode === 1) rawDelta *= 15;
+    else if (e.deltaMode === 2) rawDelta *= 100;
+    const clamped = Math.max(-80, Math.min(80, rawDelta));
+    const factor = Math.exp(-clamped * 0.003);
+    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * factor));
+    if (newZoom === zoom) return;
+    const currentTx = centerX + offset.x;
+    const currentTy = centerY + offset.y;
+    const newBase = baseScale * newZoom;
+    const newCenterX = (outerSize.w - CANVAS_SIZE * newBase) / 2;
+    const newCenterY = (outerSize.h - CANVAS_SIZE * newBase) / 2;
+    const scaleRatio = newZoom / zoom;
+    const newTx = mx - (mx - currentTx) * scaleRatio;
+    const newTy = my - (my - currentTy) * scaleRatio;
+    setZoom(newZoom);
+    setOffset({ x: newTx - newCenterX, y: newTy - newCenterY });
+  }
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.button !== 0) return;
+    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+    setIsDragging(true);
+    dragStart.current = {
+      mx: e.clientX,
+      my: e.clientY,
+      ox: offset.x,
+      oy: offset.y,
+    };
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!isDragging || !dragStart.current) return;
+    const dx = e.clientX - dragStart.current.mx;
+    const dy = e.clientY - dragStart.current.my;
+    setOffset({
+      x: dragStart.current.ox + dx,
+      y: dragStart.current.oy + dy,
+    });
+  }
+
+  function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    (e.currentTarget as HTMLDivElement).releasePointerCapture?.(e.pointerId);
+    setIsDragging(false);
+    dragStart.current = null;
+  }
+
+  const tx = centerX + offset.x;
+  const ty = centerY + offset.y;
+  const measured = outerSize.w > 0 && outerSize.h > 0;
+  const ready = !!meta && measured;
+
+  return (
+    <div
+      className={`canvas-wrap ${isFullscreen ? "fullscreen" : ""}`}
+      data-llm={`Pixel canvas ${CANVAS_SIZE}x${CANVAS_SIZE}, ${placedCount} pixels placed, ${live ? "live" : "connecting"}. Zoom ${zoom.toFixed(1)}x. Use place-pixels to draw.`}
+    >
+      <div className="canvas-header">
+        <span className="canvas-title">GPT War</span>
+        <span className="canvas-status">
+          <span className={`dot ${live ? "live" : ""}`} />
+          {meta ? (live ? "live" : "connecting") : "loading"} ·{" "}
+          {placedCount.toLocaleString()} pixels
+          {zoom > 1.01 ? ` · ${zoom.toFixed(1)}x` : ""}
+        </span>
+        <span className="canvas-actions">
+          {zoom > 1.01 && (
+            <button className="mode-btn" onClick={resetView}>
+              Reset
+            </button>
+          )}
+          <button
+            className="mode-btn"
+            onClick={() =>
+              setDisplayMode(isFullscreen ? "inline" : "fullscreen")
+            }
+          >
+            {isFullscreen ? "Collapse" : "Fullscreen"}
+          </button>
+        </span>
+      </div>
+
+      <div
+        ref={outerRef}
+        className={`canvas-outer ${isDragging ? "dragging" : ""}`}
+        onWheel={onWheel}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        <canvas
+          ref={canvasRef}
+          width={CANVAS_SIZE}
+          height={CANVAS_SIZE}
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            width: CANVAS_SIZE,
+            height: CANVAS_SIZE,
+            transform: `translate(${tx}px, ${ty}px) scale(${totalScale})`,
+            transformOrigin: "0 0",
+            opacity: ready ? 1 : 0,
+          }}
+        />
+      </div>
+    </div>
+  );
+}

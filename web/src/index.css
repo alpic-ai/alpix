@@ -1,0 +1,126 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+.canvas-wrap {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem;
+  gap: 0.4rem;
+  /* Inline: explicit height so the iframe auto-sizes to this. */
+  height: 600px;
+}
+
+.canvas-wrap.fullscreen {
+  height: 100dvh;
+}
+
+.canvas-header {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--fg-muted, #666);
+}
+
+.canvas-title {
+  font-weight: 600;
+  color: var(--fg, #111);
+}
+
+.canvas-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+.canvas-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #9ca3af;
+}
+
+.dot.live {
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+}
+
+.mode-btn {
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  color: inherit;
+}
+.mode-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.canvas-outer {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: #f5f5f5;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.canvas-outer.dragging {
+  cursor: grabbing;
+}
+
+.canvas-outer canvas {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: opacity 120ms ease-out;
+}
+
+@media (prefers-color-scheme: dark) {
+  .canvas-header {
+    color: #aaa;
+  }
+  .canvas-title {
+    color: #eee;
+  }
+  .canvas-outer {
+    background: #1f1f22;
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+  .mode-btn {
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  .mode-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
