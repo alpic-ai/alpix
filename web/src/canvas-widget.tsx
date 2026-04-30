@@ -15,10 +15,11 @@ const EMPTY_B = 240;
 type WidgetMeta = {
   supabase: { url: string; anonKey: string };
   palette: string[];
-  paletteNames: string[];
 };
 
 type PixelRow = { x: number; y: number; color: number };
+
+type DragStart = { mx: number; my: number; ox: number; oy: number };
 
 function hexToRgb(hex: string): [number, number, number] {
   const m = hex.replace("#", "");
@@ -54,12 +55,7 @@ export function CanvasWidget() {
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const dragStart = useRef<{
-    mx: number;
-    my: number;
-    ox: number;
-    oy: number;
-  } | null>(null);
+  const dragStart = useRef<DragStart | null>(null);
 
   const paletteRgb = useMemo(
     () => (meta?.palette ?? []).map(hexToRgb),
@@ -132,7 +128,7 @@ export function CanvasWidget() {
     (async () => {
       const buf = new Int16Array(CANVAS_SIZE * CANVAS_SIZE).fill(-1);
       let count = 0;
-      const pageSize = 10000;
+      const pageSize = 1000;
       let from = 0;
       while (!cancelled) {
         const { data, error } = await client
@@ -150,7 +146,7 @@ export function CanvasWidget() {
           buf[row.y * CANVAS_SIZE + row.x] = row.color;
           count++;
         }
-        if (rows.length < pageSize) break;
+        if (rows.length === 0 || rows.length < pageSize) break;
         from += pageSize;
       }
       if (cancelled) return;
@@ -174,13 +170,12 @@ export function CanvasWidget() {
     };
   }, [meta?.supabase?.url, meta?.supabase?.anonKey]);
 
-  // Full redraw when snapshot changes OR palette arrives.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ignore
   useEffect(() => {
     drawAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapshotVersion, paletteRgb.length]);
+  }, [snapshotVersion, paletteRgb]);
 
-  // Realtime subscription — other clients' writes + our own confirmations.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ignore Realtime subscription — other clients' writes + our own confirmations.
   useEffect(() => {
     if (!meta?.supabase?.url || !meta?.supabase?.anonKey) return;
     const client: SupabaseClient = createClient(
@@ -262,7 +257,7 @@ export function CanvasWidget() {
 
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (e.button !== 0) return;
-    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+    e.currentTarget.setPointerCapture(e.pointerId);
     setIsDragging(true);
     dragStart.current = {
       mx: e.clientX,
@@ -273,17 +268,16 @@ export function CanvasWidget() {
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    if (!isDragging || !dragStart.current) return;
-    const dx = e.clientX - dragStart.current.mx;
-    const dy = e.clientY - dragStart.current.my;
+    const start = dragStart.current;
+    if (!isDragging || !start) return;
     setOffset({
-      x: dragStart.current.ox + dx,
-      y: dragStart.current.oy + dy,
+      x: start.ox + (e.clientX - start.mx),
+      y: start.oy + (e.clientY - start.my),
     });
   }
 
   function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
-    (e.currentTarget as HTMLDivElement).releasePointerCapture?.(e.pointerId);
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
     setIsDragging(false);
     dragStart.current = null;
   }
@@ -308,11 +302,12 @@ export function CanvasWidget() {
         </span>
         <span className="canvas-actions">
           {zoom > 1.01 && (
-            <button className="mode-btn" onClick={resetView}>
+            <button type="button" className="mode-btn" onClick={resetView}>
               Reset
             </button>
           )}
           <button
+            type="button"
             className="mode-btn"
             onClick={() =>
               setDisplayMode(isFullscreen ? "inline" : "fullscreen")

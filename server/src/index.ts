@@ -12,34 +12,43 @@ import { getSupabase, getSupabasePublic } from "./supabase.js";
 
 const MAX_BATCH = 1000;
 
-function supabaseHost(): string {
-  const { url } = getSupabasePublic();
+type PixelRow = {
+  x: number;
+  y: number;
+  color: number;
+  updated_at: string;
+};
+
+const PALETTE_HEX = PALETTE.map((p) => p.hex);
+
+const SUPABASE_HOST = (() => {
   try {
-    return new URL(url || "https://placeholder.supabase.co").host;
+    return new URL(
+      getSupabasePublic().url || "https://placeholder.supabase.co",
+    ).host;
   } catch {
     return "placeholder.supabase.co";
   }
-}
-
-function widgetMeta() {
-  return {
-    supabase: getSupabasePublic(),
-    palette: PALETTE.map((p) => p.hex),
-    paletteNames: PALETTE.map((p) => p.name),
-  };
-}
+})();
 
 const csp = {
   ui: {
     csp: {
       connectDomains: [
-        `https://${supabaseHost()}`,
-        `wss://${supabaseHost()}`,
+        `https://${SUPABASE_HOST}`,
+        `wss://${SUPABASE_HOST}`,
       ],
       resourceDomains: [] as string[],
     },
   },
 };
+
+function widgetMeta() {
+  return {
+    supabase: getSupabasePublic(),
+    palette: PALETTE_HEX,
+  };
+}
 
 async function placedCount(): Promise<number> {
   try {
@@ -120,10 +129,7 @@ const server = new McpServer(
     async ({ pixels }) => {
       const now = new Date().toISOString();
       // Dedupe on (x, y) — Supabase upsert with duplicate PKs in one batch errors.
-      const byKey = new Map<
-        string,
-        { x: number; y: number; color: number; updated_at: string }
-      >();
+      const byKey = new Map<string, PixelRow>();
       for (const p of pixels) {
         byKey.set(`${p.x},${p.y}`, {
           x: p.x,
