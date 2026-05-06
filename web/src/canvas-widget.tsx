@@ -3,12 +3,14 @@ import "@/index.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { useDisplayMode } from "skybridge/web";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
   BoxSelect,
   Maximize2,
   Minimize2,
   Shuffle,
   User,
+  Users,
   X,
 } from "lucide-react";
 import { Button } from "@alpic-ai/ui/components/button";
@@ -127,6 +129,15 @@ export function CanvasWidget() {
   const fetchBufferRef = useRef<Map<number, number> | null>(null);
   const [live, setLive] = useState(false);
   const [placedCount, setPlacedCount] = useState(0);
+  // How many widgets currently have an active websocket — driven by
+  // Supabase Realtime Presence on the same channel we use for pixel updates.
+  const [liveCount, setLiveCount] = useState(0);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  // Latest user_name for the presence track() call. We can't use the
+  // userName state directly inside the channel-subscribe useEffect (deps
+  // would force a channel rebuild on every name change), so we mirror it
+  // through a ref.
+  const userNameRef = useRef<string | null>(null);
   const [outerSize, setOuterSize] = useState({ w: 0, h: 0 });
   // Bumped whenever pixelsRef is bulk-replaced, triggering a full redraw.
   const [snapshotVersion, setSnapshotVersion] = useState(0);
@@ -336,8 +347,14 @@ export function CanvasWidget() {
         realtime: { params: { eventsPerSecond: 30 } },
       },
     );
-    const channel = client
-      .channel("pixels-live")
+    // A per-tab id so two tabs from the same user count separately. We
+    // don't dedupe by user_name because we want the count to reflect how
+    // many widgets are currently watching, not how many distinct people.
+    const presenceKey = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    const channel: RealtimeChannel = client
+      .channel("pixels-live", {
+        config: { presence: { key: presenceKey } },
+      })
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "pixels" },
@@ -358,13 +375,32 @@ export function CanvasWidget() {
           drawOne(row.x, row.y, row.color);
         },
       )
-      .subscribe((status) => {
+      .on("presence", { event: "sync" }, () => {
+        setLiveCount(Object.keys(channel.presenceState()).length);
+      })
+      .subscribe(async (status) => {
         setLive(status === "SUBSCRIBED");
+        if (status === "SUBSCRIBED") {
+          // track() registers our presence on this channel; the user_name
+          // is included so we could later show who's here, not just count.
+          await channel.track({ user_name: userNameRef.current ?? null });
+        }
       });
+    channelRef.current = channel;
     return () => {
+      channelRef.current = null;
       client.removeChannel(channel);
     };
   }, [meta?.supabase?.url, meta?.supabase?.anonKey]);
+
+  // Push name updates into the live presence record without re-creating
+  // the channel (we don't want to drop the postgres_changes subscription).
+  userNameRef.current = userName;
+  useEffect(() => {
+    const ch = channelRef.current;
+    if (!ch) return;
+    void ch.track({ user_name: userName ?? null });
+  }, [userName]);
 
   // Pan + zoom transforms.
   const baseScale =
@@ -879,7 +915,16 @@ export function CanvasWidget() {
           </>
         )}
 
-        <div className="absolute top-2 right-2 flex gap-1.5">
+        <div className="absolute top-2 right-2 flex items-center gap-1.5">
+          {liveCount > 0 && (
+            <div
+              className="inline-flex h-7 items-center gap-1.5 rounded-full bg-black/55 px-2.5 text-xs text-white backdrop-blur-sm"
+              title={`${liveCount} viewer${liveCount === 1 ? "" : "s"} live on the canvas`}
+            >
+              <Users size={14} />
+              <span className="font-mono tabular-nums">{liveCount}</span>
+            </div>
+          )}
           <button
             type="button"
             aria-label={mode === "select" ? "Exit select mode" : "Select zone"}
