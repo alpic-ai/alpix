@@ -230,30 +230,54 @@ export function CanvasWidget() {
     setOffset({ x: 0, y: 0 });
   }
 
-  function onWheel(e: React.WheelEvent<HTMLDivElement>) {
-    if (!outerRef.current) return;
-    e.preventDefault();
-    const rect = outerRef.current.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    let rawDelta = e.deltaY;
-    if (e.deltaMode === 1) rawDelta *= 15;
-    else if (e.deltaMode === 2) rawDelta *= 100;
-    const clamped = Math.max(-80, Math.min(80, rawDelta));
-    const factor = Math.exp(-clamped * 0.003);
-    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * factor));
-    if (newZoom === zoom) return;
-    const currentTx = centerX + offset.x;
-    const currentTy = centerY + offset.y;
-    const newBase = baseScale * newZoom;
-    const newCenterX = (outerSize.w - CANVAS_SIZE * newBase) / 2;
-    const newCenterY = (outerSize.h - CANVAS_SIZE * newBase) / 2;
-    const scaleRatio = newZoom / zoom;
-    const newTx = mx - (mx - currentTx) * scaleRatio;
-    const newTy = my - (my - currentTy) * scaleRatio;
-    setZoom(newZoom);
-    setOffset({ x: newTx - newCenterX, y: newTy - newCenterY });
-  }
+  const wheelStateRef = useRef({
+    zoom,
+    offset,
+    outerSize,
+    baseScale,
+    centerX,
+    centerY,
+  });
+  wheelStateRef.current = {
+    zoom,
+    offset,
+    outerSize,
+    baseScale,
+    centerX,
+    centerY,
+  };
+
+  useEffect(() => {
+    const el = outerRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      const s = wheelStateRef.current;
+      if (s.outerSize.w === 0 || s.outerSize.h === 0) return;
+      const rect = el.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      let rawDelta = e.deltaY;
+      if (e.deltaMode === 1) rawDelta *= 15;
+      else if (e.deltaMode === 2) rawDelta *= 100;
+      const clamped = Math.max(-80, Math.min(80, rawDelta));
+      const factor = Math.exp(-clamped * 0.003);
+      const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, s.zoom * factor));
+      if (newZoom === s.zoom) return;
+      const currentTx = s.centerX + s.offset.x;
+      const currentTy = s.centerY + s.offset.y;
+      const newBase = s.baseScale * newZoom;
+      const newCenterX = (s.outerSize.w - CANVAS_SIZE * newBase) / 2;
+      const newCenterY = (s.outerSize.h - CANVAS_SIZE * newBase) / 2;
+      const scaleRatio = newZoom / s.zoom;
+      const newTx = mx - (mx - currentTx) * scaleRatio;
+      const newTy = my - (my - currentTy) * scaleRatio;
+      setZoom(newZoom);
+      setOffset({ x: newTx - newCenterX, y: newTy - newCenterY });
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, []);
 
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (e.button !== 0) return;
@@ -321,7 +345,6 @@ export function CanvasWidget() {
       <div
         ref={outerRef}
         className={`canvas-outer ${isDragging ? "dragging" : ""}`}
-        onWheel={onWheel}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
