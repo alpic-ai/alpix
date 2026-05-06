@@ -599,10 +599,10 @@ export function CanvasWidget() {
   // get divided by totalScale to map back.
   type SelectionInteraction =
     | "move"
-    | "resize-n"
-    | "resize-s"
-    | "resize-e"
-    | "resize-w";
+    | "resize-nw"
+    | "resize-ne"
+    | "resize-sw"
+    | "resize-se";
   const selectionInteraction = useRef<{
     type: SelectionInteraction;
     startMouse: { x: number; y: number };
@@ -630,31 +630,29 @@ export function CanvasWidget() {
     const dx = (e.clientX - ix.startMouse.x) / totalScale;
     const dy = (e.clientY - ix.startMouse.y) / totalScale;
     let { x, y, w, h } = ix.startRect;
-    switch (ix.type) {
-      case "move":
-        x = Math.round(x + dx);
-        y = Math.round(y + dy);
-        x = Math.max(0, Math.min(CANVAS_SIZE - w, x));
-        y = Math.max(0, Math.min(CANVAS_SIZE - h, y));
-        break;
-      case "resize-n": {
-        const newY = Math.round(Math.max(0, Math.min(y + h - 1, y + dy)));
-        h = h - (newY - y);
-        y = newY;
-        break;
-      }
-      case "resize-s":
-        h = Math.round(Math.max(1, Math.min(CANVAS_SIZE - y, h + dy)));
-        break;
-      case "resize-w": {
+    if (ix.type === "move") {
+      x = Math.round(x + dx);
+      y = Math.round(y + dy);
+      x = Math.max(0, Math.min(CANVAS_SIZE - w, x));
+      y = Math.max(0, Math.min(CANVAS_SIZE - h, y));
+    } else {
+      // Corner resize: adjust the two edges meeting at the dragged corner.
+      const movesLeft = ix.type === "resize-nw" || ix.type === "resize-sw";
+      const movesTop = ix.type === "resize-nw" || ix.type === "resize-ne";
+      if (movesLeft) {
         const newX = Math.round(Math.max(0, Math.min(x + w - 1, x + dx)));
         w = w - (newX - x);
         x = newX;
-        break;
-      }
-      case "resize-e":
+      } else {
         w = Math.round(Math.max(1, Math.min(CANVAS_SIZE - x, w + dx)));
-        break;
+      }
+      if (movesTop) {
+        const newY = Math.round(Math.max(0, Math.min(y + h - 1, y + dy)));
+        h = h - (newY - y);
+        y = newY;
+      } else {
+        h = Math.round(Math.max(1, Math.min(CANVAS_SIZE - y, h + dy)));
+      }
     }
     setSelection({ x, y, w, h });
   }
@@ -751,10 +749,10 @@ export function CanvasWidget() {
             cy: number;
             cursor: string;
           }[] = [
-            { edge: "resize-n", cx: sx + sw / 2, cy: sy,       cursor: "ns-resize" },
-            { edge: "resize-s", cx: sx + sw / 2, cy: sy + sh,  cursor: "ns-resize" },
-            { edge: "resize-w", cx: sx,          cy: sy + sh / 2, cursor: "ew-resize" },
-            { edge: "resize-e", cx: sx + sw,     cy: sy + sh / 2, cursor: "ew-resize" },
+            { edge: "resize-nw", cx: sx,      cy: sy,      cursor: "nwse-resize" },
+            { edge: "resize-ne", cx: sx + sw, cy: sy,      cursor: "nesw-resize" },
+            { edge: "resize-sw", cx: sx,      cy: sy + sh, cursor: "nesw-resize" },
+            { edge: "resize-se", cx: sx + sw, cy: sy + sh, cursor: "nwse-resize" },
           ];
           return (
             <>
