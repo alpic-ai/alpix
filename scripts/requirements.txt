@@ -1,0 +1,6 @@
+pillow
+numpy
+imageio[ffmpeg]
+python-dotenv
+supabase
+tqdm
