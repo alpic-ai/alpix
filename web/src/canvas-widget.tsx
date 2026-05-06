@@ -5,7 +5,6 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { useDisplayMode } from "skybridge/web";
 import {
   BoxSelect,
-  Loader2,
   Maximize2,
   Minimize2,
   Shuffle,
@@ -125,11 +124,6 @@ export function CanvasWidget() {
   const fetchBufferRef = useRef<Map<number, number> | null>(null);
   const [live, setLive] = useState(false);
   const [placedCount, setPlacedCount] = useState(0);
-  // True while pixel-update events are flowing in — the model is mid-drawing.
-  // Reset 2s after the last event. Used to lock the selection zone so the
-  // user can't yank it out from under the model's target.
-  const [writing, setWriting] = useState(false);
-  const writingTimerRef = useRef<number | null>(null);
   const [outerSize, setOuterSize] = useState({ w: 0, h: 0 });
   // Bumped whenever pixelsRef is bulk-replaced, triggering a full redraw.
   const [snapshotVersion, setSnapshotVersion] = useState(0);
@@ -359,17 +353,6 @@ export function CanvasWidget() {
             setPlacedCount((n) => n + 1);
           }
           drawOne(row.x, row.y, row.color);
-          // Mark the model as actively writing; reset 2s after the last
-          // event. The check inside the timer guards against running it
-          // after unmount.
-          setWriting(true);
-          if (writingTimerRef.current !== null) {
-            clearTimeout(writingTimerRef.current);
-          }
-          writingTimerRef.current = window.setTimeout(() => {
-            setWriting(false);
-            writingTimerRef.current = null;
-          }, 2000);
         },
       )
       .subscribe((status) => {
@@ -377,10 +360,6 @@ export function CanvasWidget() {
       });
     return () => {
       client.removeChannel(channel);
-      if (writingTimerRef.current !== null) {
-        clearTimeout(writingTimerRef.current);
-        writingTimerRef.current = null;
-      }
     };
   }, [meta?.supabase?.url, meta?.supabase?.anonKey]);
 
@@ -601,8 +580,6 @@ export function CanvasWidget() {
   }
 
   function toggleSelectMode() {
-    // Don't let the user redraw the zone while the model is mid-write.
-    if (writing) return;
     if (mode === "select") {
       setMode("pan");
       setSelectionDraft(null);
@@ -637,12 +614,6 @@ export function CanvasWidget() {
     type: SelectionInteraction,
   ) {
     if (e.button !== 0 || !selection) return;
-    // Lock selection edits while the model is actively writing — moving the
-    // zone out from under it would be confusing.
-    if (writing) {
-      e.stopPropagation();
-      return;
-    }
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     selectionInteraction.current = {
@@ -700,7 +671,6 @@ export function CanvasWidget() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (writing) return;
       if (selection || selectionDraft || mode === "select") {
         clearSelection();
         setMode("pan");
@@ -709,7 +679,7 @@ export function CanvasWidget() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selection, selectionDraft, mode, writing]);
+  }, [selection, selectionDraft, mode]);
 
   const tx = centerX + offset.x;
   const ty = centerY + offset.y;
@@ -790,27 +760,25 @@ export function CanvasWidget() {
             <>
               {/* Body of the selection — drag to move. */}
               <div
-                className={`absolute border-2 border-dashed bg-fuchsia-400/10 ${writing ? "border-fuchsia-300/60 cursor-not-allowed" : "border-fuchsia-400 cursor-move"}`}
+                className="absolute border-2 border-dashed border-fuchsia-400 bg-fuchsia-400/10 cursor-move"
                 style={{ left: sx, top: sy, width: sw, height: sh }}
                 onPointerDown={(e) => beginSelectionInteraction(e, "move")}
                 onPointerMove={onSelectionPointerMove}
                 onPointerUp={onSelectionPointerUp}
                 onPointerCancel={onSelectionPointerUp}
               />
-              {/* Edge handles — drag to resize one side. Hidden while
-                  writing so the locked state reads at a glance. */}
-              {!writing &&
-                handles.map((h) => (
-                  <div
-                    key={h.edge}
-                    className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-white bg-fuchsia-500 shadow-[0_1px_2px_rgba(0,0,0,0.25)]"
-                    style={{ left: h.cx, top: h.cy, cursor: h.cursor }}
-                    onPointerDown={(e) => beginSelectionInteraction(e, h.edge)}
-                    onPointerMove={onSelectionPointerMove}
-                    onPointerUp={onSelectionPointerUp}
-                    onPointerCancel={onSelectionPointerUp}
-                  />
-                ))}
+              {/* Edge handles — drag to resize one side. */}
+              {handles.map((h) => (
+                <div
+                  key={h.edge}
+                  className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-white bg-fuchsia-500 shadow-[0_1px_2px_rgba(0,0,0,0.25)]"
+                  style={{ left: h.cx, top: h.cy, cursor: h.cursor }}
+                  onPointerDown={(e) => beginSelectionInteraction(e, h.edge)}
+                  onPointerMove={onSelectionPointerMove}
+                  onPointerUp={onSelectionPointerUp}
+                  onPointerCancel={onSelectionPointerUp}
+                />
+              ))}
             </>
           );
         })()}
@@ -887,29 +855,14 @@ export function CanvasWidget() {
         <div className="absolute top-2 right-2 flex gap-1.5">
           <button
             type="button"
-            aria-label={
-              writing
-                ? "Zone locked — model is drawing"
-                : mode === "select"
-                  ? "Exit select mode"
-                  : "Select zone"
-            }
-            title={
-              writing
-                ? "Zone locked — model is drawing"
-                : mode === "select"
-                  ? "Exit select mode"
-                  : "Select zone"
-            }
+            aria-label={mode === "select" ? "Exit select mode" : "Select zone"}
+            title={mode === "select" ? "Exit select mode" : "Select zone"}
             aria-pressed={mode === "select"}
-            disabled={writing}
             onClick={toggleSelectMode}
-            className={`inline-flex h-7 w-7 items-center justify-center rounded-md border-0 backdrop-blur-sm transition ${
-              writing
-                ? "bg-black/30 text-white/60 cursor-not-allowed"
-                : mode === "select"
-                  ? "bg-fuchsia-500/85 text-white opacity-100 hover:bg-fuchsia-500 cursor-pointer"
-                  : "bg-black/55 text-white opacity-85 hover:bg-black/70 hover:opacity-100 cursor-pointer"
+            className={`inline-flex h-7 w-7 items-center justify-center rounded-md border-0 backdrop-blur-sm transition cursor-pointer ${
+              mode === "select"
+                ? "bg-fuchsia-500/85 text-white opacity-100 hover:bg-fuchsia-500"
+                : "bg-black/55 text-white opacity-85 hover:bg-black/70 hover:opacity-100"
             }`}
           >
             <BoxSelect size={16} />
@@ -927,7 +880,7 @@ export function CanvasWidget() {
           </button>
         </div>
 
-        <div className="absolute top-2 left-2 flex max-w-[70%] items-center gap-1.5">
+        <div className="absolute top-2 left-2 flex max-w-[60%] items-center gap-1.5">
           {userName && !nameModalOpen && (
             <button
               type="button"
@@ -940,37 +893,20 @@ export function CanvasWidget() {
               <span className="truncate">{userName}</span>
             </button>
           )}
-          {writing && (
-            <div
-              className="inline-flex h-7 items-center gap-1.5 rounded-full bg-emerald-500/85 px-2.5 text-xs text-white backdrop-blur-sm"
-              role="status"
-              aria-live="polite"
-              title="The model is drawing on the canvas"
-            >
-              <Loader2 size={12} className="animate-spin" />
-              <span>drawing…</span>
-            </div>
-          )}
           {selection && (
-            <div
-              className={`inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs text-white backdrop-blur-sm ${
-                writing ? "bg-fuchsia-500/50" : "bg-fuchsia-500/85"
-              }`}
-            >
+            <div className="inline-flex h-7 items-center gap-1.5 rounded-full bg-fuchsia-500/85 px-2.5 text-xs text-white backdrop-blur-sm">
               <span className="font-mono">
                 {selection.w}×{selection.h} @ {selection.x},{selection.y}
               </span>
-              {!writing && (
-                <button
-                  type="button"
-                  aria-label="Clear selection"
-                  title="Clear selection"
-                  onClick={clearSelection}
-                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border-0 bg-white/25 text-white transition hover:bg-white/40 cursor-pointer"
-                >
-                  <X size={10} />
-                </button>
-              )}
+              <button
+                type="button"
+                aria-label="Clear selection"
+                title="Clear selection"
+                onClick={clearSelection}
+                className="inline-flex h-4 w-4 items-center justify-center rounded-full border-0 bg-white/25 text-white transition hover:bg-white/40 cursor-pointer"
+              >
+                <X size={10} />
+              </button>
             </div>
           )}
         </div>
