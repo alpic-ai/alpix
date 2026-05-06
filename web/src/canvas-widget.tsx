@@ -403,30 +403,35 @@ export function CanvasWidget() {
     return () => el.removeEventListener("wheel", handler);
   }, []);
 
-  // Map a screen point (relative to outerRef) to canvas pixel coords,
-  // clamped to the canvas bounds.
+  // Map a screen point (relative to outerRef) to canvas pixel coords. The
+  // result is NOT clamped — callers should bounds-check (or clamp) as needed.
   function screenToCanvas(clientX: number, clientY: number) {
     const el = outerRef.current;
     if (!el) return { x: 0, y: 0 };
     const r = el.getBoundingClientRect();
     const mx = clientX - r.left;
     const my = clientY - r.top;
-    const cx = (mx - tx) / totalScale;
-    const cy = (my - ty) / totalScale;
-    return {
-      x: Math.max(0, Math.min(CANVAS_SIZE, cx)),
-      y: Math.max(0, Math.min(CANVAS_SIZE, cy)),
-    };
+    return { x: (mx - tx) / totalScale, y: (my - ty) / totalScale };
+  }
+
+  function clamp01N(v: number) {
+    return Math.max(0, Math.min(CANVAS_SIZE, v));
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (e.button !== 0) return;
+    // Don't hijack clicks that landed on an interactive overlay (toolbar
+    // buttons, selection chip, popover trigger, etc.) — let them handle the
+    // event themselves.
+    if ((e.target as HTMLElement).closest("button")) return;
     e.currentTarget.setPointerCapture(e.pointerId);
 
     if (mode === "select") {
       const { x, y } = screenToCanvas(e.clientX, e.clientY);
-      selectionStart.current = { x, y };
-      setSelectionDraft({ x: Math.floor(x), y: Math.floor(y), w: 0, h: 0 });
+      const cx = clamp01N(x);
+      const cy = clamp01N(y);
+      selectionStart.current = { x: cx, y: cy };
+      setSelectionDraft({ x: Math.floor(cx), y: Math.floor(cy), w: 0, h: 0 });
       setSelection(null);
       return;
     }
@@ -445,7 +450,9 @@ export function CanvasWidget() {
     if (mode === "select") {
       const start = selectionStart.current;
       if (!start) return;
-      const { x, y } = screenToCanvas(e.clientX, e.clientY);
+      const raw = screenToCanvas(e.clientX, e.clientY);
+      const x = clamp01N(raw.x);
+      const y = clamp01N(raw.y);
       const x0 = Math.floor(Math.min(start.x, x));
       const y0 = Math.floor(Math.min(start.y, y));
       const x1 = Math.ceil(Math.max(start.x, x));
