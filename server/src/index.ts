@@ -10,7 +10,7 @@ import {
 } from "./palette.js";
 import { getSupabase, getSupabasePublic } from "./supabase.js";
 
-const MAX_BATCH = 1000;
+const MAX_BATCH = 4096;
 
 type PixelRow = {
   x: number;
@@ -132,7 +132,7 @@ const server = new McpServer(
     { description: "Live shared pixel canvas", _meta: csp },
     {
       description:
-        "Open the live shared pixel canvas. Call this first to show the canvas to the user before placing pixels with place-pixels.",
+        "Open the live shared pixel canvas. Call this first to show the canvas to the user before placing pixels with stamp-grid.",
       inputSchema: {},
       annotations: {
         readOnlyHint: true,
@@ -150,7 +150,7 @@ const server = new McpServer(
         content: [
           {
             type: "text",
-            text: `Canvas opened (${CANVAS_SIZE}x${CANVAS_SIZE}, ${placed} pixels placed). Use place-pixels (batch) to draw.`,
+            text: `Canvas opened (${CANVAS_SIZE}x${CANVAS_SIZE}, ${placed} pixels placed). Use stamp-grid to draw.`,
           },
         ],
         _meta: widgetMeta(),
@@ -158,100 +158,17 @@ const server = new McpServer(
     },
   )
   .registerTool(
-    "place-pixels",
-    {
-      description:
-        `Place many pixels on the shared ${CANVAS_SIZE}x${CANVAS_SIZE} canvas in a single call. ` +
-        `Coordinates: (0,0)=top-left, (${CANVAS_SIZE - 1},${CANVAS_SIZE - 1})=bottom-right. ` +
-        `Pack an entire shape (bird, letter, heart, etc.) into one call — up to ${MAX_BATCH} pixels per call. ` +
-        `Available colors (32): ${COLOR_NAMES.join(", ")}. ` +
-        `Always pass user_name (read from the canvas widget — that's the name the user picked) and model_name (your own model identifier, e.g. 'gpt-5', 'claude-opus-4-7'). These are recorded with the drawing so other users can see who made it.`,
-      inputSchema: {
-        pixels: z
-          .array(
-            z.object({
-              x: z.number().int().min(0).max(CANVAS_SIZE - 1),
-              y: z.number().int().min(0).max(CANVAS_SIZE - 1),
-              color: z.enum([...COLOR_NAMES] as [ColorName, ...ColorName[]]),
-            }),
-          )
-          .min(1)
-          .max(MAX_BATCH)
-          .describe(
-            `Array of pixels to place. Each has x (column), y (row), color (palette name). Max ${MAX_BATCH} per call.`,
-          ),
-        user_name: z
-          .string()
-          .optional()
-          .describe(
-            "The user's chosen name (read it from the canvas widget). Used for attribution.",
-          ),
-        model_name: z
-          .string()
-          .optional()
-          .describe(
-            "Your model identifier (e.g. 'gpt-5', 'claude-opus-4-7'). Used for attribution.",
-          ),
-      },
-      annotations: {
-        readOnlyHint: false,
-        openWorldHint: true,
-        destructiveHint: true,
-      },
-    },
-    async ({ pixels, user_name, model_name }) => {
-      const now = new Date().toISOString();
-      // Dedupe on (x, y) — Supabase upsert with duplicate PKs in one batch errors.
-      const byKey = new Map<string, PixelRow>();
-      for (const p of pixels) {
-        byKey.set(`${p.x},${p.y}`, {
-          x: p.x,
-          y: p.y,
-          color: COLOR_INDEX[p.color],
-          updated_at: now,
-        });
-      }
-      const rows = [...byKey.values()];
-      const result = await recordDrawing(
-        rows,
-        user_name,
-        model_name,
-        "place-pixels",
-      );
-      if (!result.ok) {
-        return {
-          content: [
-            { type: "text", text: `Failed to place pixels: ${result.error}` },
-          ],
-          isError: true,
-        };
-      }
-      return {
-        structuredContent: {
-          placed: result.placed,
-          drawing_id: result.drawingId,
-        },
-        content: [
-          {
-            type: "text",
-            text: `Placed ${result.placed} pixel${result.placed === 1 ? "" : "s"} (drawing #${result.drawingId}).`,
-          },
-        ],
-      };
-    },
-  )
-  .registerTool(
     "stamp-grid",
     {
       description:
-        `Draw a rectangular sprite by submitting an ASCII grid — the natural way to draw pixel art. ` +
+        `Draw a rectangular sprite on the shared ${CANVAS_SIZE}x${CANVAS_SIZE} canvas by submitting an ASCII grid — the natural way to draw pixel art. ` +
         `Each line of the grid is one row of pixels; each character is one pixel. The grid's width and height set the drawing size. ` +
         `'legend' maps single characters to palette color names. Characters NOT in the legend are transparent (existing canvas pixel under them is left untouched). ` +
         `The top-left of the grid is placed at (x, y) on the canvas. ` +
         `Coordinates: (0,0)=top-left, (${CANVAS_SIZE - 1},${CANVAS_SIZE - 1})=bottom-right. ` +
         `Available colors (32): ${COLOR_NAMES.join(", ")}. ` +
-        `Prefer this tool over place-pixels for any shape larger than a few pixels — spatial structure is preserved in the grid string, so the drawing comes out as it looks. ` +
-        `All rows in the grid must be the same length. Max ${MAX_BATCH} placed (non-transparent) pixels per call. ` +
+        `Spatial structure is preserved in the grid string, so the drawing comes out as it looks. ` +
+        `All rows in the grid must be the same length. Max ${MAX_BATCH} placed (non-transparent) pixels per call — for larger drawings, split into several adjacent stamp-grid calls. ` +
         `Example — a red plus sign with a yellow center at (10, 20):\n` +
         `  x=10, y=20\n` +
         `  legend={"R": "red", "Y": "yellow"}\n` +

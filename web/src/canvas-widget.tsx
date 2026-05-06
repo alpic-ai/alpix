@@ -716,7 +716,7 @@ export function CanvasWidget() {
   return (
     <div
       className={`canvas-wrap ${isFullscreen ? "fullscreen" : ""}`}
-      data-llm={`Pixel canvas ${CANVAS_SIZE}x${CANVAS_SIZE}, ${placedCount} pixels placed${live ? "" : " (connecting)"}.${userName ? ` The user's chosen name is "${userName}" — pass this as user_name on every place-pixels or stamp-grid call.` : ""}${selection ? ` The user selected a target zone: x=${selection.x}, y=${selection.y}, width=${selection.w}, height=${selection.h}. Place the drawing inside this rectangle (top-left at (${selection.x},${selection.y}), bottom-right exclusive at (${selection.x + selection.w},${selection.y + selection.h})).` : ""} Use place-pixels or stamp-grid to draw.`}
+      data-llm={`Pixel canvas ${CANVAS_SIZE}x${CANVAS_SIZE}, ${placedCount} pixels placed${live ? "" : " (connecting)"}.${userName ? ` The user's chosen name is "${userName}" — pass this as user_name on every stamp-grid call.` : ""}${selection ? ` The user selected a target zone: x=${selection.x}, y=${selection.y}, width=${selection.w}, height=${selection.h}. Place the drawing inside this rectangle (top-left at (${selection.x},${selection.y}), bottom-right exclusive at (${selection.x + selection.w},${selection.y + selection.h})).` : ""} Use stamp-grid to draw.`}
     >
       <div
         ref={outerRef}
