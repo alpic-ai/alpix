@@ -48,7 +48,7 @@ type WidgetMeta = {
   maxBatch?: number;
 };
 
-type PixelRow = { x: number; y: number; color: number };
+type PixelRow = { x: number; y: number; color: number; drawing_id?: number | null };
 
 type DragStart = { mx: number; my: number; ox: number; oy: number };
 
@@ -125,16 +125,28 @@ export function CanvasWidget() {
   const pixelsRef = useRef<Int16Array>(
     new Int16Array(CANVAS_SIZE * CANVAS_SIZE).fill(-1),
   );
+  // Per-cell drawing_id (−1 = no drawing / unknown).
+  const drawingIdRef = useRef<Int32Array>(
+    new Int32Array(CANVAS_SIZE * CANVAS_SIZE).fill(-1),
+  );
+  // drawing_id → model_name; populated when the leaderboard is fetched.
+  const drawingModelMap = useRef<Map<number, string>>(new Map());
+  // The set of drawing_ids that belong to the currently highlighted model.
+  // Rebuilt whenever highlightedModel changes.
+  const highlightedDrawingIds = useRef<Set<number>>(new Set());
   // While the initial fetch is still running, realtime events are buffered
   // here (cell index → color). Replayed onto the fetched buffer at completion
   // so they aren't wiped.
   const fetchBufferRef = useRef<Map<number, number> | null>(null);
+  // Parallel buffer for drawing_ids during the initial fetch.
+  const fetchDrawingIdBufferRef = useRef<Map<number, number> | null>(null);
   const [live, setLive] = useState(false);
   const [placedCount, setPlacedCount] = useState(0);
   // How many widgets currently have an active websocket — driven by
   // Supabase Realtime Presence on the same channel we use for pixel updates.
   const [liveCount, setLiveCount] = useState(0);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const [highlightedModel, setHighlightedModel] = useState<string | null>(null);
 
   type LeaderboardEntry = { model_name: string; pixels: number };
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
@@ -232,6 +244,17 @@ export function CanvasWidget() {
   );
   const paletteRgbRef = useRef(paletteRgb);
   paletteRgbRef.current = paletteRgb;
+  // 50% blend of each palette color toward the canvas background — used to
+  // dim pixels that don't belong to the currently highlighted model.
+  const dimmedPaletteRgbRef = useRef<[number, number, number][]>([]);
+  dimmedPaletteRgbRef.current = paletteRgb.map(
+    ([r, g, b]) =>
+      [
+        Math.round(r * 0.5 + EMPTY_R * 0.5),
+        Math.round(g * 0.5 + EMPTY_G * 0.5),
+        Math.round(b * 0.5 + EMPTY_B * 0.5),
+      ] as [number, number, number],
+  );
 
   function drawAll() {
     const canvas = canvasRef.current;
@@ -241,6 +264,10 @@ export function CanvasWidget() {
     if (!ctx) return;
     const img = ctx.createImageData(CANVAS_SIZE, CANVAS_SIZE);
     const pixels = pixelsRef.current;
+    const ids = drawingIdRef.current;
+    const dimmed = dimmedPaletteRgbRef.current;
+    const hl = highlightedDrawingIds.current;
+    const isHighlighting = hl.size > 0;
     for (let i = 0; i < pixels.length; i++) {
       const c = pixels[i];
       const o = i * 4;
@@ -250,7 +277,8 @@ export function CanvasWidget() {
         img.data[o + 2] = EMPTY_B;
         img.data[o + 3] = 255;
       } else {
-        const rgb = pal[c] ?? [0, 0, 0];
+        const highlighted = !isHighlighting || hl.has(ids[i]);
+        const rgb = (highlighted ? pal : dimmed)[c] ?? [0, 0, 0];
         img.data[o] = rgb[0];
         img.data[o + 1] = rgb[1];
         img.data[o + 2] = rgb[2];
@@ -260,14 +288,18 @@ export function CanvasWidget() {
     ctx.putImageData(img, 0, 0);
   }
 
-  function drawOne(x: number, y: number, color: number) {
+  function drawOne(x: number, y: number, color: number, drawingId?: number | null) {
     const canvas = canvasRef.current;
     const pal = paletteRgbRef.current;
     if (!canvas || pal.length === 0) return;
     if (x < 0 || y < 0 || x >= CANVAS_SIZE || y >= CANVAS_SIZE) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const rgb = pal[color] ?? [0, 0, 0];
+    const hl = highlightedDrawingIds.current;
+    const isHighlighting = hl.size > 0;
+    const highlighted = !isHighlighting || (drawingId != null && hl.has(drawingId));
+    const activePal = highlighted ? pal : dimmedPaletteRgbRef.current;
+    const rgb = activePal[color] ?? [0, 0, 0];
     ctx.fillStyle = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
     ctx.fillRect(x, y, 1, 1);
   }
@@ -290,29 +322,34 @@ export function CanvasWidget() {
     if (!meta?.supabase?.url || !meta?.supabase?.anonKey) return;
     let cancelled = false;
     fetchBufferRef.current = new Map();
+    fetchDrawingIdBufferRef.current = new Map();
     const client = createClient(meta.supabase.url, meta.supabase.anonKey, {
       auth: { persistSession: false },
     });
 
     (async () => {
       const buf = new Int16Array(CANVAS_SIZE * CANVAS_SIZE).fill(-1);
+      const idBuf = new Int32Array(CANVAS_SIZE * CANVAS_SIZE).fill(-1);
       let count = 0;
       const pageSize = 1000;
       let from = 0;
       while (!cancelled) {
         const { data, error } = await client
           .from("pixels")
-          .select("x, y, color")
+          .select("x, y, color, drawing_id")
           .range(from, from + pageSize - 1);
         if (cancelled) return;
         if (error) {
           console.warn("[canvas] fetch failed:", error);
           fetchBufferRef.current = null;
+          fetchDrawingIdBufferRef.current = null;
           return;
         }
         const rows = data ?? [];
         for (const row of rows) {
-          buf[row.y * CANVAS_SIZE + row.x] = row.color;
+          const cell = row.y * CANVAS_SIZE + row.x;
+          buf[cell] = row.color;
+          idBuf[cell] = row.drawing_id ?? -1;
           count++;
         }
         if (rows.length === 0 || rows.length < pageSize) break;
@@ -321,14 +358,20 @@ export function CanvasWidget() {
       if (cancelled) return;
       // Replay realtime events that landed during the fetch.
       const pending = fetchBufferRef.current;
+      const pendingIds = fetchDrawingIdBufferRef.current;
       if (pending) {
         for (const [cell, color] of pending) {
           if (buf[cell] < 0 && color >= 0) count++;
           buf[cell] = color;
         }
       }
+      if (pendingIds) {
+        for (const [cell, did] of pendingIds) idBuf[cell] = did;
+      }
       fetchBufferRef.current = null;
+      fetchDrawingIdBufferRef.current = null;
       pixelsRef.current = buf;
+      drawingIdRef.current = idBuf;
       setPlacedCount(count);
       setSnapshotVersion((v) => v + 1);
     })();
@@ -336,6 +379,7 @@ export function CanvasWidget() {
     return () => {
       cancelled = true;
       fetchBufferRef.current = null;
+      fetchDrawingIdBufferRef.current = null;
     };
   }, [meta?.supabase?.url, meta?.supabase?.anonKey]);
 
@@ -343,6 +387,18 @@ export function CanvasWidget() {
   useEffect(() => {
     drawAll();
   }, [snapshotVersion, paletteRgb]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ignore
+  useEffect(() => {
+    const ids = new Set<number>();
+    if (highlightedModel) {
+      for (const [id, model] of drawingModelMap.current) {
+        if (model === highlightedModel) ids.add(id);
+      }
+    }
+    highlightedDrawingIds.current = ids;
+    drawAll();
+  }, [highlightedModel]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: ignore Realtime subscription — other clients' writes + our own confirmations.
   useEffect(() => {
@@ -372,15 +428,20 @@ export function CanvasWidget() {
           const idx = row.y * CANVAS_SIZE + row.x;
           const prev = pixelsRef.current[idx];
           pixelsRef.current[idx] = row.color;
+          const did = row.drawing_id ?? -1;
+          drawingIdRef.current[idx] = did;
           // If a fetch is in flight, stash the event so it survives the
           // buffer replacement at fetch-completion.
           if (fetchBufferRef.current) {
             fetchBufferRef.current.set(idx, row.color);
           }
+          if (fetchDrawingIdBufferRef.current) {
+            fetchDrawingIdBufferRef.current.set(idx, did);
+          }
           if (prev < 0 && row.color >= 0) {
             setPlacedCount((n) => n + 1);
           }
-          drawOne(row.x, row.y, row.color);
+          drawOne(row.x, row.y, row.color, row.drawing_id);
         },
       )
       .on("presence", { event: "sync" }, () => {
@@ -654,11 +715,12 @@ export function CanvasWidget() {
     // One row per tool call — won't be large enough to need pagination.
     const { data } = await client
       .from("drawings")
-      .select("model_name, pixel_count")
+      .select("id, model_name, pixel_count")
       .not("model_name", "is", null);
     if (data) {
       const totals = new Map<string, number>();
-      for (const row of data as { model_name: string; pixel_count: number }[]) {
+      for (const row of data as { id: number; model_name: string; pixel_count: number }[]) {
+        drawingModelMap.current.set(row.id, row.model_name);
         totals.set(row.model_name, (totals.get(row.model_name) ?? 0) + row.pixel_count);
       }
       const sorted = [...totals.entries()]
@@ -981,21 +1043,45 @@ export function CanvasWidget() {
               ) : leaderboard.length === 0 ? (
                 <p className="text-xs text-muted-foreground">No data yet.</p>
               ) : (
-                <ol className="flex flex-col gap-1">
-                  {leaderboard.map((entry, i) => (
-                    <li key={entry.model_name} className="flex items-center gap-2 text-xs">
-                      <span className="w-4 shrink-0 text-right text-muted-foreground/70 tabular-nums">
-                        {i + 1}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                        {entry.model_name}
-                      </span>
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {entry.pixels.toLocaleString()} px
-                      </span>
-                    </li>
-                  ))}
+                <ol className="flex flex-col gap-0.5">
+                  {leaderboard.map((entry, i) => {
+                    const active = highlightedModel === entry.model_name;
+                    return (
+                      <li key={entry.model_name}>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setHighlightedModel(active ? null : entry.model_name)
+                          }
+                          className={`flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-xs transition-colors cursor-pointer border-0 text-left ${
+                            active
+                              ? "bg-foreground text-background"
+                              : "hover:bg-muted text-foreground"
+                          }`}
+                        >
+                          <span className="w-4 shrink-0 text-right text-muted-foreground/70 tabular-nums">
+                            {i + 1}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate font-medium">
+                            {entry.model_name}
+                          </span>
+                          <span className="shrink-0 tabular-nums opacity-70">
+                            {entry.pixels.toLocaleString()} px
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ol>
+              )}
+              {highlightedModel && (
+                <button
+                  type="button"
+                  onClick={() => setHighlightedModel(null)}
+                  className="mt-2 w-full cursor-pointer rounded-md border-0 bg-muted px-2 py-1 text-center text-xs text-muted-foreground transition-colors hover:bg-muted/80"
+                >
+                  Clear highlight
+                </button>
               )}
             </PopoverContent>
           </Popover>
