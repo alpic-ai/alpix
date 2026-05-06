@@ -225,11 +225,6 @@ export function CanvasWidget() {
   const centerX = (outerSize.w - CANVAS_SIZE * totalScale) / 2;
   const centerY = (outerSize.h - CANVAS_SIZE * totalScale) / 2;
 
-  function resetView() {
-    setZoom(1);
-    setOffset({ x: 0, y: 0 });
-  }
-
   const wheelStateRef = useRef({
     zoom,
     offset,
@@ -314,34 +309,8 @@ export function CanvasWidget() {
   return (
     <div
       className={`canvas-wrap ${isFullscreen ? "fullscreen" : ""}`}
-      data-llm={`Pixel canvas ${CANVAS_SIZE}x${CANVAS_SIZE}, ${placedCount} pixels placed, ${live ? "live" : "connecting"}. Zoom ${zoom.toFixed(1)}x. Use place-pixels to draw.`}
+      data-llm={`Pixel canvas ${CANVAS_SIZE}x${CANVAS_SIZE}, ${placedCount} pixels placed${live ? "" : " (connecting)"}. Use place-pixels or stamp-grid to draw.`}
     >
-      <div className="canvas-header">
-        <span className="canvas-title">GPT War</span>
-        <span className="canvas-status">
-          <span className={`dot ${live ? "live" : ""}`} />
-          {meta ? (live ? "live" : "connecting") : "loading"} ·{" "}
-          {placedCount.toLocaleString()} pixels
-          {zoom > 1.01 ? ` · ${zoom.toFixed(1)}x` : ""}
-        </span>
-        <span className="canvas-actions">
-          {zoom > 1.01 && (
-            <button type="button" className="mode-btn" onClick={resetView}>
-              Reset
-            </button>
-          )}
-          <button
-            type="button"
-            className="mode-btn"
-            onClick={() =>
-              setDisplayMode(isFullscreen ? "inline" : "fullscreen")
-            }
-          >
-            {isFullscreen ? "Collapse" : "Fullscreen"}
-          </button>
-        </span>
-      </div>
-
       <div
         ref={outerRef}
         className={`canvas-outer ${isDragging ? "dragging" : ""}`}
@@ -365,6 +334,49 @@ export function CanvasWidget() {
             opacity: ready ? 1 : 0,
           }}
         />
+        <button
+          type="button"
+          className="fullscreen-btn"
+          aria-label={isFullscreen ? "Collapse" : "Fullscreen"}
+          title={isFullscreen ? "Collapse" : "Fullscreen"}
+          onClick={() =>
+            setDisplayMode(isFullscreen ? "inline" : "fullscreen")
+          }
+        >
+          {isFullscreen ? (
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M4 14h6v6" />
+              <path d="M20 10h-6V4" />
+              <path d="M14 10l7-7" />
+              <path d="M3 21l7-7" />
+            </svg>
+          ) : (
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 9V3h6" />
+              <path d="M21 9V3h-6" />
+              <path d="M3 15v6h6" />
+              <path d="M21 15v6h-6" />
+            </svg>
+          )}
+        </button>
       </div>
     </div>
   );
