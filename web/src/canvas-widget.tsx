@@ -9,6 +9,7 @@ import {
   Maximize2,
   Minimize2,
   Shuffle,
+  Trophy,
   User,
   Users,
   X,
@@ -27,6 +28,7 @@ import {
   Popover,
   PopoverAnchor,
   PopoverContent,
+  PopoverTrigger,
 } from "@alpic-ai/ui/components/popover";
 import { Arrow as PopoverArrow } from "@radix-ui/react-popover";
 import { useToolInfo } from "./helpers.js";
@@ -133,6 +135,12 @@ export function CanvasWidget() {
   // Supabase Realtime Presence on the same channel we use for pixel updates.
   const [liveCount, setLiveCount] = useState(0);
   const channelRef = useRef<RealtimeChannel | null>(null);
+
+  type LeaderboardEntry = { model_name: string; pixels: number };
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const leaderboardFetched = useRef(false);
   // Latest user_name for the presence track() call. We can't use the
   // userName state directly inside the channel-subscribe useEffect (deps
   // would force a channel rebuild on every name change), so we mirror it
@@ -634,6 +642,34 @@ export function CanvasWidget() {
     );
   }
 
+  async function openLeaderboard() {
+    setLeaderboardOpen(true);
+    if (leaderboardFetched.current) return;
+    if (!meta?.supabase?.url || !meta?.supabase?.anonKey) return;
+    setLeaderboardLoading(true);
+    const client = createClient(meta.supabase.url, meta.supabase.anonKey, {
+      auth: { persistSession: false },
+    });
+    // Fetch all drawings with a model name and aggregate client-side.
+    // One row per tool call — won't be large enough to need pagination.
+    const { data } = await client
+      .from("drawings")
+      .select("model_name, pixel_count")
+      .not("model_name", "is", null);
+    if (data) {
+      const totals = new Map<string, number>();
+      for (const row of data as { model_name: string; pixel_count: number }[]) {
+        totals.set(row.model_name, (totals.get(row.model_name) ?? 0) + row.pixel_count);
+      }
+      const sorted = [...totals.entries()]
+        .map(([model_name, pixels]) => ({ model_name, pixels }))
+        .sort((a, b) => b.pixels - a.pixels);
+      setLeaderboard(sorted);
+      leaderboardFetched.current = true;
+    }
+    setLeaderboardLoading(false);
+  }
+
   function toggleSelectMode() {
     if (mode === "select") {
       setMode("pan");
@@ -925,6 +961,45 @@ export function CanvasWidget() {
               <span className="font-mono tabular-nums">{liveCount}</span>
             </div>
           )}
+
+          <Popover open={leaderboardOpen} onOpenChange={setLeaderboardOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                aria-label="Model leaderboard"
+                title="Model leaderboard"
+                onClick={openLeaderboard}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border-0 bg-black/55 text-white opacity-85 backdrop-blur-sm transition hover:bg-black/70 hover:opacity-100 cursor-pointer"
+              >
+                <Trophy size={16} />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent side="bottom" align="end" sideOffset={8} className="w-64 p-3">
+              <p className="mb-2 text-xs font-semibold text-foreground">Pixels placed by model</p>
+              {leaderboardLoading ? (
+                <p className="text-xs text-muted-foreground">Loading…</p>
+              ) : leaderboard.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No data yet.</p>
+              ) : (
+                <ol className="flex flex-col gap-1">
+                  {leaderboard.map((entry, i) => (
+                    <li key={entry.model_name} className="flex items-center gap-2 text-xs">
+                      <span className="w-4 shrink-0 text-right text-muted-foreground/70 tabular-nums">
+                        {i + 1}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                        {entry.model_name}
+                      </span>
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        {entry.pixels.toLocaleString()} px
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </PopoverContent>
+          </Popover>
+
           <button
             type="button"
             aria-label={mode === "select" ? "Exit select mode" : "Select zone"}
