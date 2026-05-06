@@ -47,6 +47,7 @@ function widgetMeta() {
   return {
     supabase: getSupabasePublic(),
     palette: PALETTE_HEX,
+    maxBatch: MAX_BATCH,
   };
 }
 

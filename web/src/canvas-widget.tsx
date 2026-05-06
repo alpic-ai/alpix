@@ -39,6 +39,9 @@ const EMPTY_B = 240;
 type WidgetMeta = {
   supabase: { url: string; anonKey: string };
   palette: string[];
+  // Max pixels the model can place in a single tool call. The selection zone
+  // can't exceed this area, otherwise the model wouldn't be able to fill it.
+  maxBatch?: number;
 };
 
 type PixelRow = { x: number; y: number; color: number };
@@ -436,6 +439,11 @@ export function CanvasWidget() {
     return Math.max(0, Math.min(CANVAS_SIZE, v));
   }
 
+  // Cap the selection to the model's per-call pixel budget. Default 1000
+  // matches the server's MAX_BATCH; the server passes its actual value via
+  // widgetMeta so the two stay in sync if it ever changes.
+  const maxArea = meta?.maxBatch ?? 1000;
+
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (e.button !== 0) return;
     // Don't hijack clicks that landed on an interactive overlay (toolbar
@@ -484,12 +492,23 @@ export function CanvasWidget() {
       const start = selectionStart.current;
       if (!start) return;
       const raw = screenToCanvas(e.clientX, e.clientY);
-      const x = clamp01N(raw.x);
-      const y = clamp01N(raw.y);
-      const x0 = Math.floor(Math.min(start.x, x));
-      const y0 = Math.floor(Math.min(start.y, y));
-      const x1 = Math.ceil(Math.max(start.x, x));
-      const y1 = Math.ceil(Math.max(start.y, y));
+      let dx = clamp01N(raw.x) - start.x;
+      let dy = clamp01N(raw.y) - start.y;
+      // If the area would exceed the per-call cap, scale dx/dy back along
+      // the drag direction so the rect "sticks" to the cap.
+      const aw = Math.abs(dx);
+      const ah = Math.abs(dy);
+      if (aw * ah > maxArea && aw > 0 && ah > 0) {
+        const factor = Math.sqrt(maxArea / (aw * ah));
+        dx *= factor;
+        dy *= factor;
+      }
+      const cursorX = start.x + dx;
+      const cursorY = start.y + dy;
+      const x0 = Math.floor(Math.min(start.x, cursorX));
+      const y0 = Math.floor(Math.min(start.y, cursorY));
+      const x1 = Math.ceil(Math.max(start.x, cursorX));
+      const y1 = Math.ceil(Math.max(start.y, cursorY));
       setSelectionDraft({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
       return;
     }
@@ -652,6 +671,16 @@ export function CanvasWidget() {
         y = newY;
       } else {
         h = Math.round(Math.max(1, Math.min(CANVAS_SIZE - y, h + dy)));
+      }
+      // Cap the area, keeping the corner opposite the dragged one pinned.
+      if (w * h > maxArea) {
+        const factor = Math.sqrt(maxArea / (w * h));
+        const newW = Math.max(1, Math.floor(w * factor));
+        const newH = Math.max(1, Math.floor(h * factor));
+        if (movesLeft) x = x + w - newW;
+        if (movesTop) y = y + h - newH;
+        w = newW;
+        h = newH;
       }
     }
     setSelection({ x, y, w, h });
@@ -891,22 +920,29 @@ export function CanvasWidget() {
               <span className="truncate">{userName}</span>
             </button>
           )}
-          {selection && (
-            <div className="inline-flex h-7 items-center gap-1.5 rounded-full bg-fuchsia-500/85 px-2.5 text-xs text-white backdrop-blur-sm">
-              <span className="font-mono">
-                {selection.w}×{selection.h} @ {selection.x},{selection.y}
-              </span>
-              <button
-                type="button"
-                aria-label="Clear selection"
-                title="Clear selection"
-                onClick={clearSelection}
-                className="inline-flex h-4 w-4 items-center justify-center rounded-full border-0 bg-white/25 text-white transition hover:bg-white/40 cursor-pointer"
+          {selection && (() => {
+            const area = selection.w * selection.h;
+            const atCap = area >= maxArea * 0.99;
+            return (
+              <div
+                className="inline-flex h-7 items-center gap-1.5 rounded-full bg-fuchsia-500/85 px-2.5 text-xs text-white backdrop-blur-sm"
+                title={atCap ? `At the per-call cap (${maxArea} pixels).` : undefined}
               >
-                <X size={10} />
-              </button>
-            </div>
-          )}
+                <span className="font-mono">
+                  {selection.w}×{selection.h} · {area}/{maxArea}px
+                </span>
+                <button
+                  type="button"
+                  aria-label="Clear selection"
+                  title="Clear selection"
+                  onClick={clearSelection}
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border-0 bg-white/25 text-white transition hover:bg-white/40 cursor-pointer"
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
