@@ -15,7 +15,7 @@ Options
 -------
   --output PATH     Output file (.mp4 requires ffmpeg, .gif needs nothing extra)
                     Default: timelapse.mp4
-  --fps N           Playback speed in frames per second   [default: 8]
+  --fps N           Playback speed in frames per second   [default: 4]
   --scale N         Canvas pixels per screen pixel        [default: 4]
   --freeze N        Extra seconds to hold the last frame  [default: 3]
   --since DATE      Only include placements after this ISO date (e.g. 2025-01-01)
@@ -27,6 +27,7 @@ import os
 import sys
 from itertools import groupby
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 from PIL import Image
@@ -86,7 +87,7 @@ PALETTE_NP = np.array(PALETTE, dtype=np.uint8)
 # Data fetching
 # ---------------------------------------------------------------------------
 
-def fetch_placements(client, since: str | None, until: str | None) -> list[dict]:
+def fetch_placements(client, since: Optional[str], until: Optional[str]) -> list[dict]:
     """
     Pull all placements from Supabase ordered by placed_at, paginated.
     Returns a list of dicts with x, y, color, placed_at, drawing_id.
@@ -159,7 +160,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--output", default="timelapse.mp4",
                    help="Output path (.mp4 or .gif)")
-    p.add_argument("--fps", type=int, default=8,
+    p.add_argument("--fps", type=int, default=4,
                    help="Frames per second")
     p.add_argument("--scale", type=int, default=4,
                    help="Canvas pixels per screen pixel (upscale factor)")
