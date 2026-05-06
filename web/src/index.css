@@ -47,7 +47,7 @@ body {
   min-width: 0;
   overflow: hidden;
   background: #f5f5f5;
-  cursor: grab;
+  cursor: default;
   touch-action: none;
 }
 

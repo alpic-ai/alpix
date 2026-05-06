@@ -26,6 +26,7 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from "@alpic-ai/ui/components/popover";
+import { Arrow as PopoverArrow } from "@radix-ui/react-popover";
 import { useToolInfo } from "./helpers.js";
 
 const CANVAS_SIZE = 256;
@@ -153,6 +154,8 @@ export function CanvasWidget() {
     | {
         ax: number;
         ay: number;
+        cx: number;
+        cy: number;
         loading: boolean;
         drawing: DrawingMeta | null;
       }
@@ -437,7 +440,9 @@ export function CanvasWidget() {
     }
 
     panStart.current = { x: e.clientX, y: e.clientY };
-    setIsDragging(true);
+    // Don't flip isDragging here — it controls the grabbing cursor and we
+    // want the cursor to stay default until the user actually moves past
+    // the click threshold in onPointerMove.
     dragStart.current = {
       mx: e.clientX,
       my: e.clientY,
@@ -461,11 +466,16 @@ export function CanvasWidget() {
       return;
     }
     const start = dragStart.current;
-    if (!isDragging || !start) return;
-    setOffset({
-      x: start.ox + (e.clientX - start.mx),
-      y: start.oy + (e.clientY - start.my),
-    });
+    if (!start) return;
+    const dx = e.clientX - start.mx;
+    const dy = e.clientY - start.my;
+    if (!isDragging) {
+      // Only enter drag (and flip the grabbing cursor) once the pointer has
+      // moved past the click threshold.
+      if (Math.hypot(dx, dy) < 4) return;
+      setIsDragging(true);
+    }
+    setOffset({ x: start.ox + dx, y: start.oy + dy });
   }
 
   function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
@@ -506,12 +516,12 @@ export function CanvasWidget() {
       setPopover(null);
       return;
     }
-    const outer = outerRef.current;
-    if (!outer || !meta?.supabase?.url || !meta?.supabase?.anonKey) return;
-    const r = outer.getBoundingClientRect();
-    const ax = clientX - r.left;
-    const ay = clientY - r.top;
-    setPopover({ ax, ay, loading: true, drawing: null });
+    if (!meta?.supabase?.url || !meta?.supabase?.anonKey) return;
+    // Anchor the popover at the centre of the clicked pixel (not the mouse)
+    // so the arrow points at the pixel itself.
+    const ax = tx + (cx + 0.5) * totalScale;
+    const ay = ty + (cy + 0.5) * totalScale;
+    setPopover({ ax, ay, cx, cy, loading: true, drawing: null });
     const client = createClient(meta.supabase.url, meta.supabase.anonKey, {
       auth: { persistSession: false },
     });
@@ -552,6 +562,21 @@ export function CanvasWidget() {
     setSelection(null);
     setSelectionDraft(null);
   }
+
+  // Escape clears any active zone selection (and exits select mode if it
+  // was on). The Dialog and Popover handle their own Escape via Radix.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (selection || selectionDraft || mode === "select") {
+        clearSelection();
+        setMode("pan");
+        selectionStart.current = null;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selection, selectionDraft, mode]);
 
   const tx = centerX + offset.x;
   const ty = centerY + offset.y;
@@ -604,53 +629,72 @@ export function CanvasWidget() {
           })()}
 
         {popover && (
-          <Popover
-            open
-            onOpenChange={(open) => {
-              if (!open) setPopover(null);
-            }}
-          >
-            <PopoverAnchor asChild>
-              <div
-                style={{
-                  position: "absolute",
-                  left: popover.ax,
-                  top: popover.ay,
-                  width: 1,
-                  height: 1,
-                  pointerEvents: "none",
-                }}
-              />
-            </PopoverAnchor>
-            <PopoverContent
-              side="top"
-              align="center"
-              sideOffset={8}
-              className="w-auto min-w-[200px] max-w-[280px] p-3"
+          <>
+            {/* Highlight the selected pixel with a 1.5px outline so the user
+                can see which cell the popover refers to. */}
+            <div
+              className="pointer-events-none absolute ring-2 ring-foreground/90 ring-offset-1 ring-offset-background/40 rounded-[1px]"
+              style={{
+                left: tx + popover.cx * totalScale,
+                top: ty + popover.cy * totalScale,
+                width: totalScale,
+                height: totalScale,
+              }}
+            />
+            <Popover
+              open
+              onOpenChange={(open) => {
+                if (!open) setPopover(null);
+              }}
             >
-              {popover.loading ? (
-                <div className="text-sm text-muted-foreground">Loading…</div>
-              ) : popover.drawing ? (
-                <div className="flex flex-col gap-1">
-                  <div className="text-sm font-semibold text-foreground truncate">
-                    {popover.drawing.user_name || "anonymous"}
+              <PopoverAnchor asChild>
+                <div
+                  style={{
+                    position: "absolute",
+                    left: popover.ax,
+                    top: popover.ay,
+                    width: 1,
+                    height: 1,
+                    pointerEvents: "none",
+                  }}
+                />
+              </PopoverAnchor>
+              <PopoverContent
+                side="top"
+                align="center"
+                sideOffset={Math.max(8, totalScale / 2 + 6)}
+                collisionPadding={8}
+                className="w-auto min-w-[200px] max-w-[280px] p-3"
+              >
+                {popover.loading ? (
+                  <div className="text-sm text-muted-foreground">Loading…</div>
+                ) : popover.drawing ? (
+                  <div className="flex flex-col gap-1">
+                    <div className="text-sm font-semibold text-foreground truncate">
+                      {popover.drawing.user_name || "anonymous"}
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      via {popover.drawing.model_name || "unknown model"}
+                    </div>
+                    <div className="mt-1 text-[11px] text-muted-foreground/80">
+                      {formatRelative(popover.drawing.created_at)} ·{" "}
+                      {popover.drawing.pixel_count} px ·{" "}
+                      {popover.drawing.tool_name}
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    via {popover.drawing.model_name || "unknown model"}
+                ) : (
+                  <div className="text-sm text-muted-foreground">
+                    No drawing data for this pixel.
                   </div>
-                  <div className="mt-1 text-[11px] text-muted-foreground/80">
-                    {formatRelative(popover.drawing.created_at)} ·{" "}
-                    {popover.drawing.pixel_count} px ·{" "}
-                    {popover.drawing.tool_name}
-                  </div>
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground">
-                  No drawing data for this pixel.
-                </div>
-              )}
-            </PopoverContent>
-          </Popover>
+                )}
+                <PopoverArrow
+                  width={12}
+                  height={6}
+                  className="fill-popover drop-shadow-[0_1px_0_rgba(0,0,0,0.06)]"
+                />
+              </PopoverContent>
+            </Popover>
+          </>
         )}
 
         <div className="absolute top-2 right-2 flex gap-1.5">
