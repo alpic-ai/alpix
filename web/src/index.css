@@ -55,6 +55,10 @@ body {
   cursor: grabbing;
 }
 
+.canvas-outer.select-mode {
+  cursor: crosshair;
+}
+
 .canvas-outer canvas {
   image-rendering: pixelated;
   image-rendering: -moz-crisp-edges;
