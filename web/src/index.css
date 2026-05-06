@@ -1,3 +1,19 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@alpic-ai/ui/theme";
+
+/* Make Tailwind scan @alpic-ai/ui so the utility classes used inside the
+   shipped components actually get generated. */
+@source "../../node_modules/@alpic-ai/ui/dist/**/*.mjs";
+
+/* Blur the canvas through the dialog overlay (Radix renders it with this
+   data-slot). The default alpic overlay only dims; we want a frosted-glass
+   look so the canvas behind is recognisable but de-emphasised. */
+[data-slot="dialog-overlay"] {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -48,199 +64,8 @@ body {
   transition: opacity 120ms ease-out;
 }
 
-.canvas-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  background: rgba(0, 0, 0, 0.55);
-  border: none;
-  border-radius: 6px;
-  color: #fff;
-  cursor: pointer;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  opacity: 0.85;
-  transition: opacity 120ms ease-out, background 120ms ease-out;
-}
-.canvas-icon-btn:hover {
-  opacity: 1;
-  background: rgba(0, 0, 0, 0.7);
-}
-
-.fullscreen-btn {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  width: 28px;
-  height: 28px;
-}
-
-.name-pill {
-  position: absolute;
-  top: 0.5rem;
-  left: 0.5rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  height: 28px;
-  padding: 0 0.6rem 0 0.5rem;
-  background: rgba(0, 0, 0, 0.55);
-  border: none;
-  border-radius: 999px;
-  color: #fff;
-  cursor: pointer;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  font-size: 0.75rem;
-  font-family: inherit;
-  opacity: 0.85;
-  max-width: 50%;
-  transition: opacity 120ms ease-out, background 120ms ease-out;
-}
-.name-pill:hover {
-  opacity: 1;
-  background: rgba(0, 0, 0, 0.7);
-}
-.name-pill > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.name-modal-backdrop {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.35);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  z-index: 10;
-  padding: 1rem;
-}
-
-.name-modal {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  width: 100%;
-  max-width: 320px;
-  padding: 1.25rem;
-  background: #fff;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
-  color: #111;
-}
-
-.name-modal-title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.name-modal-sub {
-  margin: 0;
-  font-size: 0.8rem;
-  color: #666;
-}
-
-.name-modal-row {
-  display: flex;
-  align-items: stretch;
-  gap: 0.4rem;
-}
-
-.name-modal-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 36px;
-  padding: 0 0.6rem;
-  font-size: 0.9rem;
-  font-family: inherit;
-  color: inherit;
-  background: #f7f7f8;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 6px;
-}
-.name-modal-input:focus {
-  outline: none;
-  border-color: #6a5cff;
-  background: #fff;
-}
-
-.name-shuffle {
-  flex: 0 0 36px;
-  width: 36px;
-  height: 36px;
-  background: #f3f3f5;
-  color: #333;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  opacity: 1;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-}
-.name-shuffle:hover {
-  background: #ebebee;
-}
-
-.name-modal-confirm {
-  height: 38px;
-  padding: 0 0.9rem;
-  font-size: 0.9rem;
-  font-weight: 600;
-  font-family: inherit;
-  color: #fff;
-  background: #111;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.name-modal-confirm:disabled {
-  background: #999;
-  cursor: not-allowed;
-}
-.name-modal-confirm:not(:disabled):hover {
-  background: #000;
-}
-
 @media (prefers-color-scheme: dark) {
   .canvas-outer {
     background: #1f1f22;
-  }
-  .name-modal-backdrop {
-    background: rgba(0, 0, 0, 0.4);
-  }
-  .name-modal {
-    background: #1c1c20;
-    border-color: rgba(255, 255, 255, 0.08);
-    color: #f3f3f5;
-  }
-  .name-modal-sub {
-    color: #aaa;
-  }
-  .name-modal-input {
-    background: #25252a;
-    border-color: rgba(255, 255, 255, 0.1);
-    color: inherit;
-  }
-  .name-modal-input:focus {
-    background: #2a2a30;
-  }
-  .name-shuffle {
-    background: #2a2a30;
-    color: #f3f3f5;
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-  .name-shuffle:hover {
-    background: #33333a;
-  }
-  .name-modal-confirm {
-    background: #6a5cff;
-  }
-  .name-modal-confirm:not(:disabled):hover {
-    background: #7c70ff;
   }
 }

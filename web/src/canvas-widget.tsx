@@ -4,6 +4,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { useDisplayMode } from "skybridge/web";
 import { Maximize2, Minimize2, Shuffle, User } from "lucide-react";
+import { Button } from "@alpic-ai/ui/components/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@alpic-ai/ui/components/dialog";
+import { Input } from "@alpic-ai/ui/components/input";
 import { useToolInfo } from "./helpers.js";
 
 const CANVAS_SIZE = 256;
@@ -396,12 +406,12 @@ export function CanvasWidget() {
         />
         <button
           type="button"
-          className="canvas-icon-btn fullscreen-btn"
           aria-label={isFullscreen ? "Collapse" : "Fullscreen"}
           title={isFullscreen ? "Collapse" : "Fullscreen"}
           onClick={() =>
             setDisplayMode(isFullscreen ? "inline" : "fullscreen")
           }
+          className="absolute top-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-md border-0 bg-black/55 text-white opacity-85 backdrop-blur-sm transition hover:bg-black/70 hover:opacity-100 cursor-pointer"
         >
           {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
         </button>
@@ -409,59 +419,79 @@ export function CanvasWidget() {
         {userName && !nameModalOpen && (
           <button
             type="button"
-            className="name-pill"
             aria-label="Change name"
             title="Change name"
             onClick={openNameModal}
+            className="absolute top-2 left-2 inline-flex h-7 max-w-[50%] items-center gap-1.5 rounded-full border-0 bg-black/55 px-2.5 text-xs text-white opacity-85 backdrop-blur-sm transition hover:bg-black/70 hover:opacity-100 cursor-pointer"
           >
             <User size={14} />
-            <span>{userName}</span>
+            <span className="truncate">{userName}</span>
           </button>
         )}
       </div>
 
-      {nameModalOpen && (
-        <div className="name-modal-backdrop">
+      <Dialog
+        open={nameModalOpen}
+        onOpenChange={(open) => {
+          // Block closing the dialog until the user has a name set.
+          if (!open && userName) setNameModalOpen(false);
+        }}
+      >
+        <DialogContent
+          showCloseButton={!!userName}
+          onEscapeKeyDown={(e) => {
+            if (!userName) e.preventDefault();
+          }}
+          onPointerDownOutside={(e) => {
+            if (!userName) e.preventDefault();
+          }}
+          className="backdrop-blur-md"
+        >
           <form
-            className="name-modal"
             onSubmit={(e) => {
               e.preventDefault();
               confirmName();
             }}
           >
-            <h2 className="name-modal-title">Pick a name</h2>
-            <p className="name-modal-sub">
-              Shown next to the drawings you make and visible to the model.
-            </p>
-            <div className="name-modal-row">
-              <input
-                className="name-modal-input"
-                autoFocus
-                type="text"
-                value={nameDraft}
-                maxLength={40}
-                onChange={(e) => setNameDraft(e.target.value)}
-              />
-              <button
+            <DialogHeader>
+              <DialogTitle>Pick a name</DialogTitle>
+              <DialogDescription>
+                Shown next to the drawings you make, and visible to the model.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="mt-4 flex items-end gap-2">
+              <div className="flex-1">
+                <Input
+                  autoFocus
+                  type="text"
+                  value={nameDraft}
+                  maxLength={40}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                />
+              </div>
+              <Button
                 type="button"
-                className="canvas-icon-btn name-shuffle"
+                variant="secondary"
+                size="icon"
                 aria-label="Random name"
                 title="Random name"
                 onClick={() => setNameDraft(randomName())}
               >
                 <Shuffle size={16} />
-              </button>
+              </Button>
             </div>
-            <button
-              type="submit"
-              className="name-modal-confirm"
-              disabled={!nameDraft.trim()}
-            >
-              Continue
-            </button>
+            <DialogFooter className="mt-4">
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={!nameDraft.trim()}
+              >
+                Continue
+              </Button>
+            </DialogFooter>
           </form>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
