@@ -484,6 +484,9 @@ export function CanvasWidget() {
     if (mode === "select") {
       if (selectionDraft && selectionDraft.w > 0 && selectionDraft.h > 0) {
         setSelection(selectionDraft);
+        // Drop back into pan mode so the user can move the canvas around
+        // (and tweak the selection via its handles) without re-toggling.
+        setMode("pan");
       }
       setSelectionDraft(null);
       selectionStart.current = null;
@@ -563,6 +566,78 @@ export function CanvasWidget() {
     setSelectionDraft(null);
   }
 
+  // Drag-edit a committed selection: the body moves the rect, edge handles
+  // resize one side at a time. Dimensions are in canvas coords; mouse deltas
+  // get divided by totalScale to map back.
+  type SelectionInteraction =
+    | "move"
+    | "resize-n"
+    | "resize-s"
+    | "resize-e"
+    | "resize-w";
+  const selectionInteraction = useRef<{
+    type: SelectionInteraction;
+    startMouse: { x: number; y: number };
+    startRect: Rect;
+  } | null>(null);
+
+  function beginSelectionInteraction(
+    e: React.PointerEvent<HTMLDivElement>,
+    type: SelectionInteraction,
+  ) {
+    if (e.button !== 0 || !selection) return;
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    selectionInteraction.current = {
+      type,
+      startMouse: { x: e.clientX, y: e.clientY },
+      startRect: selection,
+    };
+  }
+
+  function onSelectionPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const ix = selectionInteraction.current;
+    if (!ix) return;
+    e.stopPropagation();
+    const dx = (e.clientX - ix.startMouse.x) / totalScale;
+    const dy = (e.clientY - ix.startMouse.y) / totalScale;
+    let { x, y, w, h } = ix.startRect;
+    switch (ix.type) {
+      case "move":
+        x = Math.round(x + dx);
+        y = Math.round(y + dy);
+        x = Math.max(0, Math.min(CANVAS_SIZE - w, x));
+        y = Math.max(0, Math.min(CANVAS_SIZE - h, y));
+        break;
+      case "resize-n": {
+        const newY = Math.round(Math.max(0, Math.min(y + h - 1, y + dy)));
+        h = h - (newY - y);
+        y = newY;
+        break;
+      }
+      case "resize-s":
+        h = Math.round(Math.max(1, Math.min(CANVAS_SIZE - y, h + dy)));
+        break;
+      case "resize-w": {
+        const newX = Math.round(Math.max(0, Math.min(x + w - 1, x + dx)));
+        w = w - (newX - x);
+        x = newX;
+        break;
+      }
+      case "resize-e":
+        w = Math.round(Math.max(1, Math.min(CANVAS_SIZE - x, w + dx)));
+        break;
+    }
+    setSelection({ x, y, w, h });
+  }
+
+  function onSelectionPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    if (!selectionInteraction.current) return;
+    e.stopPropagation();
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    selectionInteraction.current = null;
+  }
+
   // Escape clears any active zone selection (and exits select mode if it
   // was on). The Dialog and Popover handle their own Escape via Radix.
   useEffect(() => {
@@ -612,21 +687,60 @@ export function CanvasWidget() {
           }}
         />
 
-        {(selection || selectionDraft) &&
-          (() => {
-            const r = (selectionDraft ?? selection)!;
-            return (
+        {selectionDraft && (
+          <div
+            className="pointer-events-none absolute border-2 border-dashed border-fuchsia-400 bg-fuchsia-400/10"
+            style={{
+              left: tx + selectionDraft.x * totalScale,
+              top: ty + selectionDraft.y * totalScale,
+              width: selectionDraft.w * totalScale,
+              height: selectionDraft.h * totalScale,
+            }}
+          />
+        )}
+
+        {selection && !selectionDraft && (() => {
+          const sx = tx + selection.x * totalScale;
+          const sy = ty + selection.y * totalScale;
+          const sw = selection.w * totalScale;
+          const sh = selection.h * totalScale;
+          const handles: {
+            edge: SelectionInteraction;
+            cx: number;
+            cy: number;
+            cursor: string;
+          }[] = [
+            { edge: "resize-n", cx: sx + sw / 2, cy: sy,       cursor: "ns-resize" },
+            { edge: "resize-s", cx: sx + sw / 2, cy: sy + sh,  cursor: "ns-resize" },
+            { edge: "resize-w", cx: sx,          cy: sy + sh / 2, cursor: "ew-resize" },
+            { edge: "resize-e", cx: sx + sw,     cy: sy + sh / 2, cursor: "ew-resize" },
+          ];
+          return (
+            <>
+              {/* Body of the selection — drag to move. */}
               <div
-                className="pointer-events-none absolute border-2 border-dashed border-fuchsia-400 bg-fuchsia-400/10"
-                style={{
-                  left: tx + r.x * totalScale,
-                  top: ty + r.y * totalScale,
-                  width: r.w * totalScale,
-                  height: r.h * totalScale,
-                }}
+                className="absolute border-2 border-dashed border-fuchsia-400 bg-fuchsia-400/10 cursor-move"
+                style={{ left: sx, top: sy, width: sw, height: sh }}
+                onPointerDown={(e) => beginSelectionInteraction(e, "move")}
+                onPointerMove={onSelectionPointerMove}
+                onPointerUp={onSelectionPointerUp}
+                onPointerCancel={onSelectionPointerUp}
               />
-            );
-          })()}
+              {/* Edge handles — drag to resize one side. */}
+              {handles.map((h) => (
+                <div
+                  key={h.edge}
+                  className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-white bg-fuchsia-500 shadow-[0_1px_2px_rgba(0,0,0,0.25)]"
+                  style={{ left: h.cx, top: h.cy, cursor: h.cursor }}
+                  onPointerDown={(e) => beginSelectionInteraction(e, h.edge)}
+                  onPointerMove={onSelectionPointerMove}
+                  onPointerUp={onSelectionPointerUp}
+                  onPointerCancel={onSelectionPointerUp}
+                />
+              ))}
+            </>
+          );
+        })()}
 
         {popover && (
           <>
