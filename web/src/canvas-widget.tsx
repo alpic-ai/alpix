@@ -8,6 +8,7 @@ import {
   BoxSelect,
   Maximize2,
   Minimize2,
+  PictureInPicture2,
   Shuffle,
   Trophy,
   User,
@@ -117,8 +118,29 @@ function saveStoredName(name: string) {
 export function CanvasWidget() {
   const info = useToolInfo<"canvas">();
   const meta = info.responseMetadata as unknown as WidgetMeta | undefined;
+  const formatModelName = (name: string) => {
+    const segments = name.toLowerCase().split("-");
+    const result: string[] = [];
+    let i = 0;
+    while (i < segments.length) {
+      const seg = segments[i];
+      if (/^\d+$/.test(seg)) {
+        const nums = [seg];
+        while (i + 1 < segments.length && /^\d+$/.test(segments[i + 1])) {
+          nums.push(segments[++i]);
+        }
+        result.push(nums.join("."));
+      } else {
+        result.push(seg.charAt(0).toUpperCase() + seg.slice(1));
+      }
+      i++;
+    }
+    return result.join(" ");
+  };
+
   const [displayMode, setDisplayMode] = useDisplayMode();
   const isFullscreen = displayMode === "fullscreen";
+  const isPip = displayMode === "pip";
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const outerRef = useRef<HTMLDivElement | null>(null);
@@ -990,7 +1012,7 @@ export function CanvasWidget() {
                       {popover.drawing.user_name || "anonymous"}
                     </div>
                     <div className="text-xs text-muted-foreground truncate">
-                      via {popover.drawing.model_name || "unknown model"}
+                      via {popover.drawing.model_name ? formatModelName(popover.drawing.model_name) : "unknown model"}
                     </div>
                     <div className="mt-1 text-[11px] text-muted-foreground/80">
                       {formatRelative(popover.drawing.created_at)} ·{" "}
@@ -1024,7 +1046,7 @@ export function CanvasWidget() {
             </div>
           )}
 
-          <Popover open={leaderboardOpen} onOpenChange={setLeaderboardOpen}>
+          {!isPip && <Popover open={leaderboardOpen} onOpenChange={setLeaderboardOpen}>
             <PopoverTrigger asChild>
               <button
                 type="button"
@@ -1063,7 +1085,7 @@ export function CanvasWidget() {
                             {i + 1}
                           </span>
                           <span className="min-w-0 flex-1 truncate font-medium">
-                            {entry.model_name}
+                            {formatModelName(entry.model_name)}
                           </span>
                           <span className="shrink-0 tabular-nums opacity-70">
                             {entry.pixels.toLocaleString()} px
@@ -1084,7 +1106,7 @@ export function CanvasWidget() {
                 </button>
               )}
             </PopoverContent>
-          </Popover>
+          </Popover>}
 
           <button
             type="button"
@@ -1100,21 +1122,32 @@ export function CanvasWidget() {
           >
             <BoxSelect size={16} />
           </button>
+          {!isPip && (
+            <button
+              type="button"
+              aria-label="Picture in picture"
+              title="Picture in picture"
+              onClick={() => setDisplayMode("pip")}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border-0 bg-black/55 text-white opacity-85 backdrop-blur-sm transition hover:bg-black/70 hover:opacity-100 cursor-pointer"
+            >
+              <PictureInPicture2 size={16} />
+            </button>
+          )}
           <button
             type="button"
             aria-label={isFullscreen ? "Collapse" : "Fullscreen"}
             title={isFullscreen ? "Collapse" : "Fullscreen"}
             onClick={() =>
-              setDisplayMode(isFullscreen ? "inline" : "fullscreen")
+              setDisplayMode(isFullscreen || isPip ? "inline" : "fullscreen")
             }
             className="inline-flex h-7 w-7 items-center justify-center rounded-md border-0 bg-black/55 text-white opacity-85 backdrop-blur-sm transition hover:bg-black/70 hover:opacity-100 cursor-pointer"
           >
-            {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            {isFullscreen || isPip ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
         </div>
 
         <div className="absolute top-2 left-2 flex max-w-[60%] items-center gap-1.5">
-          {userName && !nameModalOpen && (
+          {!isPip && userName && !nameModalOpen && (
             <button
               type="button"
               aria-label="Change name"
@@ -1126,7 +1159,7 @@ export function CanvasWidget() {
               <span className="truncate">{userName}</span>
             </button>
           )}
-          {selection && (() => {
+          {!isPip && selection && (() => {
             const area = selection.w * selection.h;
             const atCap = area >= maxArea * 0.99;
             return (
