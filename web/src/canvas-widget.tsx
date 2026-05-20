@@ -733,11 +733,18 @@ export function CanvasWidget() {
     const client = createClient(meta.supabase.url, meta.supabase.anonKey, {
       auth: { persistSession: false },
     });
-    // Fetch all drawings with a model name and aggregate client-side.
-    // One row per tool call — won't be large enough to need pagination.
+    // Resolve the current canvas id, then fetch drawings for it only.
+    const { data: canvasData } = await client
+      .from("canvases")
+      .select("id")
+      .order("id", { ascending: false })
+      .limit(1)
+      .single();
+    const canvasId = (canvasData as { id: number } | null)?.id ?? 1;
     const { data } = await client
       .from("drawings")
       .select("id, model_name, pixel_count")
+      .eq("canvas_id", canvasId)
       .not("model_name", "is", null);
     if (data) {
       const totals = new Map<string, number>();

@@ -43,6 +43,20 @@ const csp = {
   },
 };
 
+let cachedCanvasId: number | null = null;
+
+async function getCurrentCanvasId(): Promise<number> {
+  if (cachedCanvasId !== null) return cachedCanvasId;
+  const { data } = await getSupabase()
+    .from("canvases")
+    .select("id")
+    .order("id", { ascending: false })
+    .limit(1)
+    .single();
+  cachedCanvasId = (data as { id: number } | null)?.id ?? 1;
+  return cachedCanvasId;
+}
+
 function widgetMeta() {
   return {
     supabase: getSupabasePublic(),
@@ -79,6 +93,7 @@ async function recordDrawing(
   toolName: string,
 ): Promise<DrawingResult> {
   const supa = getSupabase();
+  const canvasId = await getCurrentCanvasId();
   const { data: drawing, error: drawingErr } = await supa
     .from("drawings")
     .insert({
@@ -86,6 +101,7 @@ async function recordDrawing(
       model_name: modelName ?? null,
       tool_name: toolName,
       pixel_count: rows.length,
+      canvas_id: canvasId,
     })
     .select("id")
     .single();
@@ -141,7 +157,10 @@ const server = new McpServer(
       },
     },
     async () => {
+      cachedCanvasId = null; // refresh on every new session
       const placed = await placedCount();
+      // pre-warm the canvas id cache for subsequent stamp-grid calls
+      getCurrentCanvasId();
       return {
         structuredContent: {
           size: CANVAS_SIZE,
