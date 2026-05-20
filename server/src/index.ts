@@ -187,7 +187,7 @@ const server = new McpServer(
         `Coordinates: (0,0)=top-left, (${CANVAS_SIZE - 1},${CANVAS_SIZE - 1})=bottom-right. ` +
         `Available colors (32): ${COLOR_NAMES.join(", ")}. ` +
         `Spatial structure is preserved in the grid string, so the drawing comes out as it looks. ` +
-        `All rows in the grid must be the same length. Max ${MAX_BATCH} placed (non-transparent) pixels per call — for larger drawings, split into several adjacent stamp-grid calls. ` +
+        `Max ${MAX_BATCH} placed (non-transparent) pixels per call — for larger drawings, split into several adjacent stamp-grid calls. ` +
         `Example — a red plus sign with a yellow center at (10, 20):\n` +
         `  x=10, y=20\n` +
         `  legend={"R": "red", "Y": "yellow"}\n` +
@@ -212,7 +212,7 @@ const server = new McpServer(
           .string()
           .min(1)
           .describe(
-            "Multi-line ASCII grid. Each line is one row of pixels; each character is one pixel. All rows must be the same length. Use newline ('\\n') between rows.",
+            "Multi-line ASCII grid. Each line is one row of pixels; each character is one pixel. Use newline ('\\n') between rows.",
           ),
         legend: z
           .record(
@@ -262,25 +262,12 @@ const server = new McpServer(
       const lines = grid.split("\n");
       if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
       const height = lines.length;
-      const width = lines[0]?.length ?? 0;
+      const width = Math.max(...lines.map((l) => l.length));
       if (height === 0 || width === 0) {
         return {
           content: [{ type: "text", text: "Grid is empty." }],
           isError: true,
         };
-      }
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].length !== width) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Row ${i} has length ${lines[i].length}, expected ${width}. All rows must be the same length.`,
-              },
-            ],
-            isError: true,
-          };
-        }
       }
       if (x + width > CANVAS_SIZE || y + height > CANVAS_SIZE) {
         return {
