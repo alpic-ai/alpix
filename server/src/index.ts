@@ -175,7 +175,7 @@ const server = new McpServer(
         `  grid=".R.\\nRYR\\n.R."\n` +
         `  (the '.' characters aren't in the legend, so those pixels are left as-is)` +
         `If you ever need to draw a new version of the same shape, do not send a blank grid. Instead just draw above the existing shape. ` +
-        `Always pass user_name (read from the canvas widget — the name the user picked) and model_name (your own model identifier, e.g. 'gpt-5', 'claude-opus-4-7'). These are recorded so other users can see who drew it.`,
+        `Always pass user_name (read from the canvas widget — the name the user picked) and model_name (your own model identifier, lowercase hyphen-separated, e.g. 'gpt-4o', 'claude-opus-4-7'). These are recorded so other users can see who drew it.`,
       inputSchema: {
         x: z
           .number()
@@ -213,7 +213,7 @@ const server = new McpServer(
           .string()
           .optional()
           .describe(
-            "Your model identifier (e.g. 'gpt-5', 'claude-opus-4-7'). Used for attribution.",
+            "Your model identifier. Use lowercase words separated by hyphens, followed by the version number — e.g. 'gpt-4o', 'claude-opus-4-7', 'gemini-2-5-pro'. Used for attribution.",
           ),
       },
       annotations: {
@@ -222,7 +222,10 @@ const server = new McpServer(
         destructiveHint: true,
       },
     },
-    async ({ x, y, grid, legend, user_name, model_name }) => {
+    async ({ x, y, grid, legend, user_name, model_name: rawModelName }) => {
+      const model_name = rawModelName
+        ? rawModelName.trim().toLowerCase().replace(/[\s_]+/g, "-")
+        : undefined;
       for (const key of Object.keys(legend)) {
         if (key.length !== 1) {
           return {
