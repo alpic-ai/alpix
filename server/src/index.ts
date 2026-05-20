@@ -43,18 +43,14 @@ const csp = {
   },
 };
 
-let cachedCanvasId: number | null = null;
-
 async function getCurrentCanvasId(): Promise<number> {
-  if (cachedCanvasId !== null) return cachedCanvasId;
   const { data } = await getSupabase()
     .from("canvases")
     .select("id")
     .order("id", { ascending: false })
     .limit(1)
     .single();
-  cachedCanvasId = (data as { id: number } | null)?.id ?? 1;
-  return cachedCanvasId;
+  return (data as { id: number } | null)?.id ?? 1;
 }
 
 function widgetMeta() {
@@ -157,10 +153,7 @@ const server = new McpServer(
       },
     },
     async () => {
-      cachedCanvasId = null; // refresh on every new session
       const placed = await placedCount();
-      // pre-warm the canvas id cache for subsequent stamp-grid calls
-      getCurrentCanvasId();
       return {
         structuredContent: {
           size: CANVAS_SIZE,
@@ -356,6 +349,50 @@ const server = new McpServer(
             text: `Stamped ${width}x${height} grid at (${x},${y}): placed ${result.placed} pixel${result.placed === 1 ? "" : "s"}, ${skipped} transparent (drawing #${result.drawingId}).`,
           },
         ],
+      };
+    },
+  )
+  .registerTool(
+    "get-leaderboard",
+    {
+      description: "Fetch the pixel leaderboard for the current canvas — a ranked list of AI models by total pixels placed.",
+      inputSchema: {},
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: false,
+      },
+    },
+    async () => {
+      const canvasId = await getCurrentCanvasId();
+      const { data, error } = await getSupabase()
+        .from("drawings")
+        .select("model_name, pixel_count")
+        .eq("canvas_id", canvasId)
+        .not("model_name", "is", null);
+
+      if (error) {
+        return {
+          content: [{ type: "text", text: `Failed to fetch leaderboard: ${error.message}` }],
+          isError: true,
+        };
+      }
+
+      const totals = new Map<string, number>();
+      for (const row of data as { model_name: string; pixel_count: number }[]) {
+        totals.set(row.model_name, (totals.get(row.model_name) ?? 0) + row.pixel_count);
+      }
+      const ranked = [...totals.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([model_name, pixels], i) => ({ rank: i + 1, model_name, pixels }));
+
+      const text = ranked.length === 0
+        ? "No drawings on the current canvas yet."
+        : ranked.map(e => `${e.rank}. ${e.model_name} — ${e.pixels.toLocaleString()} px`).join("\n");
+
+      return {
+        structuredContent: { leaderboard: ranked },
+        content: [{ type: "text", text }],
       };
     },
   );

@@ -174,7 +174,6 @@ export function CanvasWidget() {
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
-  const leaderboardFetched = useRef(false);
   // Latest user_name for the presence track() call. We can't use the
   // userName state directly inside the channel-subscribe useEffect (deps
   // would force a channel rebuild on every name change), so we mirror it
@@ -727,7 +726,6 @@ export function CanvasWidget() {
 
   async function openLeaderboard() {
     setLeaderboardOpen(true);
-    if (leaderboardFetched.current) return;
     if (!meta?.supabase?.url || !meta?.supabase?.anonKey) return;
     setLeaderboardLoading(true);
     const client = createClient(meta.supabase.url, meta.supabase.anonKey, {
@@ -740,12 +738,13 @@ export function CanvasWidget() {
       .order("id", { ascending: false })
       .limit(1)
       .single();
-    const canvasId = (canvasData as { id: number } | null)?.id ?? 1;
-    const { data } = await client
+    const canvasId = (canvasData as { id: number } | null)?.id;
+    let query = client
       .from("drawings")
       .select("id, model_name, pixel_count")
-      .eq("canvas_id", canvasId)
       .not("model_name", "is", null);
+    if (canvasId != null) query = query.eq("canvas_id", canvasId);
+    const { data } = await query;
     if (data) {
       const totals = new Map<string, number>();
       for (const row of data as { id: number; model_name: string; pixel_count: number }[]) {
@@ -756,7 +755,6 @@ export function CanvasWidget() {
         .map(([model_name, pixels]) => ({ model_name, pixels }))
         .sort((a, b) => b.pixels - a.pixels);
       setLeaderboard(sorted);
-      leaderboardFetched.current = true;
     }
     setLeaderboardLoading(false);
   }
