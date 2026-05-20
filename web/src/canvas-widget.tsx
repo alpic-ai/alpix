@@ -188,6 +188,9 @@ export function CanvasWidget() {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef<DragStart | null>(null);
+  const activePointers = useRef<Map<number, { x: number; y: number }>>(new Map());
+  type PinchStart = { dist: number; midX: number; midY: number; zoom: number; tx: number; ty: number; baseScale: number; outerW: number; outerH: number };
+  const pinchStart = useRef<PinchStart | null>(null);
 
   // Selection mode: drag a rectangle on the canvas to mark where the model
   // should draw. Surfaced to the model via data-llm.
@@ -546,8 +549,18 @@ export function CanvasWidget() {
       setZoom(newZoom);
       setOffset({ x: newTx - newCenterX, y: newTy - newCenterY });
     };
+    const preventTouch = (e: TouchEvent) => {
+      if ((e.target as HTMLElement).closest("button, a, input, select, textarea, [role='button']")) return;
+      e.preventDefault();
+    };
     el.addEventListener("wheel", handler, { passive: false });
-    return () => el.removeEventListener("wheel", handler);
+    el.addEventListener("touchstart", preventTouch, { passive: false });
+    el.addEventListener("touchmove", preventTouch, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", handler);
+      el.removeEventListener("touchstart", preventTouch);
+      el.removeEventListener("touchmove", preventTouch);
+    };
   }, []);
 
   // Map a screen point (relative to outerRef) to canvas pixel coords. The
@@ -572,10 +585,38 @@ export function CanvasWidget() {
 
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (e.button !== 0) return;
+    activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    // Two fingers → start pinch zoom, cancel any ongoing pan.
+    if (activePointers.current.size === 2) {
+      e.currentTarget.setPointerCapture(e.pointerId);
+      dragStart.current = null;
+      panStart.current = null;
+      selectionStart.current = null;
+      const pts = [...activePointers.current.values()];
+      const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      const el = outerRef.current!;
+      const rect = el.getBoundingClientRect();
+      const s = wheelStateRef.current;
+      pinchStart.current = {
+        dist,
+        midX: (pts[0].x + pts[1].x) / 2 - rect.left,
+        midY: (pts[0].y + pts[1].y) / 2 - rect.top,
+        zoom: s.zoom,
+        tx: s.centerX + s.offset.x,
+        ty: s.centerY + s.offset.y,
+        baseScale: s.baseScale,
+        outerW: s.outerSize.w,
+        outerH: s.outerSize.h,
+      };
+      return;
+    }
+
     // Don't hijack clicks that landed on an interactive overlay (toolbar
     // buttons, selection chip, popover trigger, etc.) — let them handle the
     // event themselves.
     if ((e.target as HTMLElement).closest("button")) return;
+
     e.currentTarget.setPointerCapture(e.pointerId);
 
     if (mode === "select") {
@@ -601,6 +642,27 @@ export function CanvasWidget() {
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    // Two-finger pinch zoom.
+    const ps = pinchStart.current;
+    if (activePointers.current.size >= 2 && ps) {
+      const pts = [...activePointers.current.values()];
+      const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      if (dist > 0 && ps.dist > 0) {
+        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, ps.zoom * (dist / ps.dist)));
+        const totalScale1 = ps.baseScale * newZoom;
+        const tx1 = ps.midX - (ps.midX - ps.tx) * (newZoom / ps.zoom);
+        const ty1 = ps.midY - (ps.midY - ps.ty) * (newZoom / ps.zoom);
+        setZoom(newZoom);
+        setOffset({
+          x: tx1 - (ps.outerW - CANVAS_SIZE * totalScale1) / 2,
+          y: ty1 - (ps.outerH - CANVAS_SIZE * totalScale1) / 2,
+        });
+      }
+      return;
+    }
+
     // Track the cell under the cursor for the hover highlight (regardless of
     // mode or drag state). Clears when the pointer leaves the canvas area.
     {
@@ -635,7 +697,14 @@ export function CanvasWidget() {
       const y0 = Math.floor(Math.min(start.y, cursorY));
       const x1 = Math.ceil(Math.max(start.x, cursorX));
       const y1 = Math.ceil(Math.max(start.y, cursorY));
-      setSelectionDraft({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+      let w = x1 - x0;
+      let h = y1 - y0;
+      // floor/ceil can push the integer rect slightly over the cap — hard-clamp.
+      if (w * h > maxArea) {
+        w = Math.floor(w * Math.sqrt(maxArea / (w * h))) || 1;
+        h = Math.floor(maxArea / w) || 1;
+      }
+      setSelectionDraft({ x: x0, y: y0, w, h });
       return;
     }
     const start = dragStart.current;
@@ -653,6 +722,8 @@ export function CanvasWidget() {
 
   function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
     e.currentTarget.releasePointerCapture?.(e.pointerId);
+    activePointers.current.delete(e.pointerId);
+    if (activePointers.current.size < 2) pinchStart.current = null;
 
     if (mode === "select") {
       if (selectionDraft && selectionDraft.w > 0 && selectionDraft.h > 0) {
@@ -1040,7 +1111,7 @@ export function CanvasWidget() {
           </>
         )}
 
-        <div className="absolute top-2 right-2 flex items-center gap-1.5">
+        <div className="toolbar-right absolute top-2 right-2 flex items-center gap-1.5" style={isFullscreen ? { top: 'calc(0.5rem + env(safe-area-inset-top, 0px))' } : undefined}>
           {liveCount > 0 && (
             <div
               className="inline-flex h-7 items-center gap-1.5 rounded-full bg-black/55 px-2.5 text-xs text-white backdrop-blur-sm"
@@ -1133,7 +1204,7 @@ export function CanvasWidget() {
               aria-label="Picture in picture"
               title="Picture in picture"
               onClick={() => setDisplayMode("pip")}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border-0 bg-black/55 text-white opacity-85 backdrop-blur-sm transition hover:bg-black/70 hover:opacity-100 cursor-pointer"
+              className="hidden sm:inline-flex h-7 w-7 items-center justify-center rounded-md border-0 bg-black/55 text-white opacity-85 backdrop-blur-sm transition hover:bg-black/70 hover:opacity-100 cursor-pointer"
             >
               <PictureInPicture2 size={16} />
             </button>
@@ -1145,14 +1216,14 @@ export function CanvasWidget() {
             onClick={() =>
               setDisplayMode(isFullscreen || isPip ? "inline" : "fullscreen")
             }
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md border-0 bg-black/55 text-white opacity-85 backdrop-blur-sm transition hover:bg-black/70 hover:opacity-100 cursor-pointer"
+            className={`${isFullscreen ? "hidden sm:inline-flex" : "inline-flex"} h-7 w-7 items-center justify-center rounded-md border-0 bg-black/55 text-white opacity-85 backdrop-blur-sm transition hover:bg-black/70 hover:opacity-100 cursor-pointer`}
           >
             {isFullscreen || isPip ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
         </div>
 
-        <div className="absolute top-2 left-2 flex max-w-[60%] items-center gap-1.5">
-          {!isPip && userName && !nameModalOpen && (
+        <div className="absolute top-2 left-2 flex max-w-[60%] items-center gap-1.5" style={isFullscreen ? { top: 'calc(0.5rem + env(safe-area-inset-top, 0px))' } : undefined}>
+          {!isPip && !selection && !selectionDraft && userName && !nameModalOpen && (
             <button
               type="button"
               aria-label="Change name"
@@ -1164,8 +1235,9 @@ export function CanvasWidget() {
               <span className="truncate">{userName}</span>
             </button>
           )}
-          {!isPip && selection && (() => {
-            const area = selection.w * selection.h;
+          {!isPip && (selectionDraft || selection) && (() => {
+            const rect = selectionDraft ?? selection!;
+            const area = rect.w * rect.h;
             const atCap = area >= maxArea * 0.99;
             return (
               <div
@@ -1173,17 +1245,19 @@ export function CanvasWidget() {
                 title={atCap ? `At the per-call cap (${maxArea} pixels).` : undefined}
               >
                 <span className="font-mono">
-                  {selection.w}×{selection.h} · {area}/{maxArea}px
+                  {rect.w}×{rect.h} · {area}/{maxArea}px
                 </span>
-                <button
-                  type="button"
-                  aria-label="Clear selection"
-                  title="Clear selection"
-                  onClick={clearSelection}
-                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border-0 bg-white/25 text-white transition hover:bg-white/40 cursor-pointer"
-                >
-                  <X size={10} />
-                </button>
+                {selection && !selectionDraft && (
+                  <button
+                    type="button"
+                    aria-label="Clear selection"
+                    title="Clear selection"
+                    onClick={clearSelection}
+                    className="inline-flex h-4 w-4 items-center justify-center rounded-full border-0 bg-white/25 text-white transition hover:bg-white/40 cursor-pointer"
+                  >
+                    <X size={10} />
+                  </button>
+                )}
               </div>
             );
           })()}

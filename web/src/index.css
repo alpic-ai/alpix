@@ -4,7 +4,7 @@
 
 /* Make Tailwind scan @alpic-ai/ui so the utility classes used inside the
    shipped components actually get generated. */
-@source "../../node_modules/@alpic-ai/ui/dist/**/*.mjs";
+   @source "../../node_modules/@alpic-ai/ui/dist/**/*.mjs";
 
 /* Blur the canvas through the dialog overlay (Radix renders it with this
    data-slot). The default alpic overlay only dims; we want a frosted-glass
@@ -34,10 +34,18 @@ body {
   flex-direction: column;
   /* Inline: explicit height so the iframe auto-sizes to this. */
   height: 600px;
+  touch-action: none;
+  overscroll-behavior: none;
 }
 
 .canvas-wrap.fullscreen {
   height: 100dvh;
+}
+
+@media (max-width: 639px) {
+  .canvas-wrap.fullscreen .toolbar-right {
+    padding-right: calc(env(safe-area-inset-right, 0px) + 44px);
+  }
 }
 
 .canvas-outer {
