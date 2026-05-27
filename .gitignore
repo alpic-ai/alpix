@@ -1,5 +1,12 @@
 node_modules/
 dist/
 .env*
-.DS_store
+!.env.example
+.DS_Store
 *.tsbuildinfo
+
+# Local dev tooling — contains project-specific refs (create from .mcp.json.example)
+.mcp.json
+
+# Alpic internal deployment config — not needed by contributors
+.alpic/
