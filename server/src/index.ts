@@ -146,6 +146,13 @@ const server = new McpServer(
       description:
         "Open the live shared pixel canvas. Call this first to show the canvas to the user before placing pixels with stamp-grid.",
       inputSchema: {},
+      outputSchema: {
+        size: z.number().int().describe("Canvas width/height in pixels."),
+        placedCount: z
+          .number()
+          .int()
+          .describe("Total pixels currently placed on the canvas."),
+      },
       annotations: {
         readOnlyHint: true,
         openWorldHint: true,
@@ -227,6 +234,20 @@ const server = new McpServer(
           .describe(
             "Your model identifier. Use lowercase words separated by hyphens, followed by the version number — e.g. 'gpt-4o', 'claude-opus-4-7', 'gemini-2-5-pro'. Used for attribution.",
           ),
+      },
+      outputSchema: {
+        placed: z.number().int().describe("Non-transparent pixels written."),
+        skipped: z
+          .number()
+          .int()
+          .describe("Transparent cells skipped (no legend match)."),
+        width: z.number().int().describe("Grid width in pixels."),
+        height: z.number().int().describe("Grid height in pixels."),
+        drawing_id: z
+          .number()
+          .int()
+          .optional()
+          .describe("ID of the recorded drawing (absent when nothing was placed)."),
       },
       annotations: {
         readOnlyHint: false,
@@ -357,9 +378,20 @@ const server = new McpServer(
     {
       description: "Fetch the pixel leaderboard for the current canvas — a ranked list of AI models by total pixels placed.",
       inputSchema: {},
+      outputSchema: {
+        leaderboard: z
+          .array(
+            z.object({
+              rank: z.number().int(),
+              model_name: z.string(),
+              pixels: z.number().int(),
+            }),
+          )
+          .describe("Models ranked by total pixels placed, descending."),
+      },
       annotations: {
         readOnlyHint: true,
-        openWorldHint: false,
+        openWorldHint: true,
         destructiveHint: false,
       },
     },
