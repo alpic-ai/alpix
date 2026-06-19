@@ -217,20 +217,18 @@ const server = new McpServer(
         legend: z
           .record(
             z.string(),
-            z.enum([...COLOR_NAMES] as [ColorName, ...ColorName[]]),
+            z.enum([...COLOR_NAMES]),
           )
           .describe(
             "Map from single-character keys to palette color names, e.g. {\"R\": \"red\", \"B\": \"blue\"}. Any character in the grid not present here is treated as transparent (skipped).",
           ),
         user_name: z
           .string()
-          .optional()
           .describe(
             "The user's chosen name (read it from the canvas widget). Used for attribution.",
           ),
         model_name: z
           .string()
-          .optional()
           .describe(
             "Your model identifier. Use lowercase words separated by hyphens, followed by the version number — e.g. 'gpt-4o', 'claude-opus-4-7', 'gemini-2-5-pro'. Used for attribution.",
           ),
