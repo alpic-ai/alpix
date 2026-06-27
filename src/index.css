@@ -4,7 +4,7 @@
 
 /* Make Tailwind scan @alpic-ai/ui so the utility classes used inside the
    shipped components actually get generated. */
-   @source "../../node_modules/@alpic-ai/ui/dist/**/*.mjs";
+@source "../node_modules/@alpic-ai/ui/src";
 
 /* Blur the canvas through the dialog overlay (Radix renders it with this
    data-slot). The default alpic overlay only dims; we want a frosted-glass

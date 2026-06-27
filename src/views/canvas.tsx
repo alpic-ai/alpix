@@ -32,7 +32,7 @@ import {
   PopoverTrigger,
 } from "@alpic-ai/ui/components/popover";
 import { Arrow as PopoverArrow } from "@radix-ui/react-popover";
-import { useToolInfo } from "./helpers.js";
+import { useToolInfo } from "../helpers.js";
 
 const CANVAS_SIZE = 256;
 const MIN_ZOOM = 1;
@@ -115,7 +115,7 @@ function saveStoredName(name: string) {
   }
 }
 
-export function CanvasWidget() {
+export default function CanvasWidget() {
   const info = useToolInfo<"canvas">();
   const meta = info.responseMetadata as unknown as WidgetMeta | undefined;
   const formatModelName = (name: string) => {

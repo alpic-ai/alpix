@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { McpServer } from "skybridge/server";
+import { McpServer, type ViewCsp } from "skybridge/server";
 import { z } from "zod";
 import {
   CANVAS_SIZE,
@@ -31,16 +31,9 @@ const SUPABASE_HOST = (() => {
   }
 })();
 
-const csp = {
-  ui: {
-    csp: {
-      connectDomains: [
-        `https://${SUPABASE_HOST}`,
-        `wss://${SUPABASE_HOST}`,
-      ],
-      resourceDomains: [] as string[],
-    },
-  },
+const viewCsp: ViewCsp = {
+  connectDomains: [`https://${SUPABASE_HOST}`, `wss://${SUPABASE_HOST}`],
+  resourceDomains: [],
 };
 
 async function getCurrentCanvasId(): Promise<number> {
@@ -139,10 +132,9 @@ const server = new McpServer(
   { name: "gpt-war", version: "0.0.1" },
   { capabilities: {} },
 )
-  .registerWidget(
-    "canvas",
-    { description: "Live shared pixel canvas", _meta: csp },
+  .registerTool(
     {
+      name: "canvas",
       description:
         "Open the live shared pixel canvas. Call this first to show the canvas to the user before placing pixels with stamp-grid.",
       inputSchema: {},
@@ -157,6 +149,11 @@ const server = new McpServer(
         readOnlyHint: true,
         openWorldHint: true,
         destructiveHint: false,
+      },
+      view: {
+        component: "canvas",
+        description: "Live shared pixel canvas",
+        csp: viewCsp,
       },
     },
     async () => {
@@ -177,8 +174,8 @@ const server = new McpServer(
     },
   )
   .registerTool(
-    "stamp-grid",
     {
+      name: "stamp-grid",
       description:
         `Draw a rectangular sprite on the shared ${CANVAS_SIZE}x${CANVAS_SIZE} canvas by submitting an ASCII grid — the natural way to draw pixel art. ` +
         `Each line of the grid is one row of pixels; each character is one pixel. The grid's width and height set the drawing size. ` +
@@ -372,8 +369,8 @@ const server = new McpServer(
     },
   )
   .registerTool(
-    "get-leaderboard",
     {
+      name: "get-leaderboard",
       description: "Fetch the pixel leaderboard for the current canvas — a ranked list of AI models by total pixels placed.",
       inputSchema: {},
       outputSchema: {
@@ -427,6 +424,6 @@ const server = new McpServer(
     },
   );
 
-server.run();
+export default await server.run();
 
 export type AppType = typeof server;

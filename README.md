@@ -44,34 +44,31 @@ This command starts:
 #### 3. Project structure
 
 ```
-├── server/
-│   └── src/
-│       └── index.ts      # Server entry point
-├── web/
-│   ├── src/
-│   │   ├── widgets/      # React components (one per widget)
-│   │   ├── helpers.ts    # Shared utilities
-│   │   └── index.css     # Global styles
-│   └── vite.config.ts
+├── src/
+│   ├── server.ts         # Server entry point (tool + view registration)
+│   ├── helpers.ts        # Type-safe hooks (generateHelpers)
+│   ├── index.css         # Global styles
+│   └── views/            # React components (one file per view)
+│       └── canvas.tsx
+├── vite.config.ts        # Vite config (skybridge/vite plugin)
 ├── alpic.json            # Deployment config
-├── nodemon.json          # Dev server config
 └── package.json
 ```
 
-### Create your first widget
+### Create your first view
 
-#### 1. Add a new widget
+#### 1. Add a new view
 
-- Register a widget in `server/src/server.ts` with a unique name (e.g., `my-widget`) using [`registerWidget`](https://docs.skybridge.tech/api-reference/register-widget)
-- Create a matching React component at `web/src/widgets/my-widget.tsx`. **The file name must match the widget name exactly**.
+- Register a tool in `src/server.ts` with a unique name (e.g., `my-tool`) using [`registerTool`](https://docs.skybridge.tech/api-reference/register-tool), and attach a UI via the `view: { component: "my-view" }` field.
+- Create a matching React component at `src/views/my-view.tsx` with a **default export**. The Skybridge Vite plugin auto-mounts it — **the file name must match the `view.component` name exactly**.
 
-#### 2. Edit widgets with Hot Module Replacement (HMR)
+#### 2. Edit views with Hot Module Replacement (HMR)
 
-Edit and save components in `web/src/widgets/` — changes will appear instantly inside your App.
+Edit and save components in `src/views/` — changes will appear instantly inside your App.
 
 #### 3. Edit server code
 
-Modify files in `server/` and refresh the connection with your testing MCP Client to see the changes.
+Modify `src/server.ts` and refresh the connection with your testing MCP Client to see the changes.
 
 ### Testing your App
 
