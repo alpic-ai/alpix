@@ -10,3 +10,4 @@ dist/
 
 # Alpic internal deployment config — not needed by contributors
 .alpic/
+.vercel/

@@ -44,7 +44,7 @@ CANVAS_SIZE = 256
 PAGE_SIZE = 1000
 EMPTY_COLOR = (0xF0, 0xF0, 0xF0)   # matches the widget background
 
-# Palette from server/src/palette.ts — index corresponds to color column value
+# Palette from src/palette.ts — index corresponds to color column value
 PALETTE = [
     (0x6D, 0x00, 0x1A),  # 00 dark_red
     (0xBE, 0x00, 0x39),  # 01 red
