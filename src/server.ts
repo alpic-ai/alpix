@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { McpServer, type ViewCsp } from "skybridge/server";
+import { McpServer } from "skybridge/server";
 import { z } from "zod";
 import {
   CANVAS_SIZE,
@@ -30,11 +30,6 @@ const SUPABASE_HOST = (() => {
     return "placeholder.supabase.co";
   }
 })();
-
-const viewCsp: ViewCsp = {
-  connectDomains: [`https://${SUPABASE_HOST}`, `wss://${SUPABASE_HOST}`],
-  resourceDomains: [],
-};
 
 async function getCurrentCanvasId(): Promise<number> {
   const { data } = await getSupabase()
@@ -153,7 +148,10 @@ const server = new McpServer(
       view: {
         component: "canvas",
         description: "Live shared pixel canvas",
-        csp: viewCsp,
+        csp: {
+          connectDomains: [`https://${SUPABASE_HOST}`, `wss://${SUPABASE_HOST}`],
+          resourceDomains: [],
+        },
       },
     },
     async () => {
