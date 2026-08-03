@@ -126,6 +126,7 @@ async function recordDrawing(
 const server = new McpServer(
   { name: "gpt-war", version: "0.0.1" },
   { capabilities: {} },
+  { skills: true },
 )
   .registerTool(
     {
