@@ -2,6 +2,11 @@
 /// <reference types="node" />
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
+import {
+  CANVAS_RESET_EVENT,
+  PIXELS_CHANNEL,
+  type CanvasResetPayload,
+} from "../src/realtime.js";
 
 const url = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -49,6 +54,20 @@ const { error: truncateErr } = await supa.from("pixels").delete().gte("x", 0);
 if (truncateErr) {
   console.error("Failed to truncate pixels:", truncateErr.message);
   process.exit(1);
+}
+
+const channel = supa.channel(PIXELS_CHANNEL);
+const resetPayload: CanvasResetPayload = { canvasId: newCanvas.id };
+try {
+  await channel.httpSend(CANVAS_RESET_EVENT, resetPayload);
+} catch (error) {
+  console.warn("Canvas reset succeeded, but its Realtime notification failed:", error);
+} finally {
+  try {
+    await supa.removeChannel(channel);
+  } catch (error) {
+    console.warn("Failed to clean up reset Broadcast channel:", error);
+  }
 }
 
 console.log(`Done. Canvas #${newCanvas.id} is now active and empty.`);

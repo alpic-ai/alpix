@@ -1,7 +1,7 @@
 import "@/index.css";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 import { useDisplayMode } from "skybridge/web";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
@@ -33,6 +33,13 @@ import {
 } from "@alpic-ai/ui/components/popover";
 import { Arrow as PopoverArrow } from "@radix-ui/react-popover";
 import { useToolInfo } from "../helpers.js";
+import {
+  CANVAS_RESET_EVENT,
+  MAX_PIXEL_BATCH,
+  PIXEL_BATCH_EVENT,
+  PIXELS_CHANNEL,
+  type PixelBatchPayload,
+} from "../realtime.js";
 
 const CANVAS_SIZE = 256;
 const MIN_ZOOM = 1;
@@ -113,6 +120,24 @@ function saveStoredName(name: string) {
   } catch {
     /* ignore */
   }
+}
+
+function isPixelBatchPayload(value: unknown): value is PixelBatchPayload {
+  if (!value || typeof value !== "object") return false;
+  const { drawingId, pixels } = value as Partial<PixelBatchPayload>;
+  if (!Number.isInteger(drawingId) || !Array.isArray(pixels)) return false;
+  if (pixels.length === 0 || pixels.length > MAX_PIXEL_BATCH) return false;
+  return pixels.every(
+    (pixel) =>
+      Array.isArray(pixel) &&
+      pixel.length === 3 &&
+      pixel.every(Number.isInteger) &&
+      pixel[0] >= 0 &&
+      pixel[0] < CANVAS_SIZE &&
+      pixel[1] >= 0 &&
+      pixel[1] < CANVAS_SIZE &&
+      pixel[2] >= 0,
+  );
 }
 
 export default function CanvasWidget() {
@@ -340,73 +365,6 @@ export default function CanvasWidget() {
     return () => ro.disconnect();
   }, []);
 
-  // Paginated fetch so we bypass PostgREST's default 1000-row cap.
-  // Buffer realtime events during the fetch so they don't get wiped.
-  useEffect(() => {
-    if (!meta?.supabase?.url || !meta?.supabase?.anonKey) return;
-    let cancelled = false;
-    fetchBufferRef.current = new Map();
-    fetchDrawingIdBufferRef.current = new Map();
-    const client = createClient(meta.supabase.url, meta.supabase.anonKey, {
-      auth: { persistSession: false },
-    });
-
-    (async () => {
-      const buf = new Int16Array(CANVAS_SIZE * CANVAS_SIZE).fill(-1);
-      const idBuf = new Int32Array(CANVAS_SIZE * CANVAS_SIZE).fill(-1);
-      let count = 0;
-      const pageSize = 1000;
-      let from = 0;
-      while (!cancelled) {
-        const { data, error } = await client
-          .from("pixels")
-          .select("x, y, color, drawing_id")
-          .range(from, from + pageSize - 1);
-        if (cancelled) return;
-        if (error) {
-          console.warn("[canvas] fetch failed:", error);
-          fetchBufferRef.current = null;
-          fetchDrawingIdBufferRef.current = null;
-          return;
-        }
-        const rows = data ?? [];
-        for (const row of rows) {
-          const cell = row.y * CANVAS_SIZE + row.x;
-          buf[cell] = row.color;
-          idBuf[cell] = row.drawing_id ?? -1;
-          count++;
-        }
-        if (rows.length === 0 || rows.length < pageSize) break;
-        from += pageSize;
-      }
-      if (cancelled) return;
-      // Replay realtime events that landed during the fetch.
-      const pending = fetchBufferRef.current;
-      const pendingIds = fetchDrawingIdBufferRef.current;
-      if (pending) {
-        for (const [cell, color] of pending) {
-          if (buf[cell] < 0 && color >= 0) count++;
-          buf[cell] = color;
-        }
-      }
-      if (pendingIds) {
-        for (const [cell, did] of pendingIds) idBuf[cell] = did;
-      }
-      fetchBufferRef.current = null;
-      fetchDrawingIdBufferRef.current = null;
-      pixelsRef.current = buf;
-      drawingIdRef.current = idBuf;
-      setPlacedCount(count);
-      setSnapshotVersion((v) => v + 1);
-    })();
-
-    return () => {
-      cancelled = true;
-      fetchBufferRef.current = null;
-      fetchDrawingIdBufferRef.current = null;
-    };
-  }, [meta?.supabase?.url, meta?.supabase?.anonKey]);
-
   // biome-ignore lint/correctness/useExhaustiveDependencies: ignore
   useEffect(() => {
     drawAll();
@@ -424,70 +382,151 @@ export default function CanvasWidget() {
     drawAll();
   }, [highlightedModel]);
 
+  // Subscribe before loading the authoritative snapshot. Batches received
+  // during the paginated fetch are replayed after it completes, avoiding the
+  // fetch/subscription race that could otherwise lose a drawing.
   // biome-ignore lint/correctness/useExhaustiveDependencies: ignore Realtime subscription — other clients' writes + our own confirmations.
   useEffect(() => {
     if (!meta?.supabase?.url || !meta?.supabase?.anonKey) return;
-    const client: SupabaseClient = createClient(
-      meta.supabase.url,
-      meta.supabase.anonKey,
-      {
-        auth: { persistSession: false },
-        realtime: { params: { eventsPerSecond: 30 } },
-      },
-    );
+    let disposed = false;
+    let snapshotGeneration = 0;
+    let hasSubscribed = false;
+    const client = createClient(meta.supabase.url, meta.supabase.anonKey, {
+      auth: { persistSession: false },
+    });
+
+    const refreshSnapshot = async () => {
+      const generation = ++snapshotGeneration;
+      fetchBufferRef.current = new Map();
+      fetchDrawingIdBufferRef.current = new Map();
+      const buf = new Int16Array(CANVAS_SIZE * CANVAS_SIZE).fill(-1);
+      const idBuf = new Int32Array(CANVAS_SIZE * CANVAS_SIZE).fill(-1);
+      let count = 0;
+      const pageSize = 1000;
+      let from = 0;
+
+      try {
+        while (!disposed && generation === snapshotGeneration) {
+          const { data, error } = await client
+            .from("pixels")
+            .select("x, y, color, drawing_id")
+            .range(from, from + pageSize - 1);
+          if (disposed || generation !== snapshotGeneration) return;
+          if (error) throw error;
+
+          const rows = (data ?? []) as PixelRow[];
+          for (const row of rows) {
+            const cell = row.y * CANVAS_SIZE + row.x;
+            buf[cell] = row.color;
+            idBuf[cell] = row.drawing_id ?? -1;
+            count++;
+          }
+          if (rows.length === 0 || rows.length < pageSize) break;
+          from += pageSize;
+        }
+        if (disposed || generation !== snapshotGeneration) return;
+
+        const pending = fetchBufferRef.current;
+        const pendingIds = fetchDrawingIdBufferRef.current;
+        if (pending) {
+          for (const [cell, color] of pending) {
+            if (buf[cell] < 0 && color >= 0) count++;
+            buf[cell] = color;
+          }
+        }
+        if (pendingIds) {
+          for (const [cell, drawingId] of pendingIds) {
+            idBuf[cell] = drawingId;
+          }
+        }
+
+        fetchBufferRef.current = null;
+        fetchDrawingIdBufferRef.current = null;
+        pixelsRef.current = buf;
+        drawingIdRef.current = idBuf;
+        setPlacedCount(count);
+        setSnapshotVersion((version) => version + 1);
+      } catch (error) {
+        if (disposed || generation !== snapshotGeneration) return;
+        console.warn("[canvas] snapshot fetch failed:", error);
+        fetchBufferRef.current = null;
+        fetchDrawingIdBufferRef.current = null;
+      }
+    };
+
+    const applyBatch = (batch: PixelBatchPayload) => {
+      let newlyPlaced = 0;
+      for (const [x, y, color] of batch.pixels) {
+        const cell = y * CANVAS_SIZE + x;
+        const previous = pixelsRef.current[cell];
+        pixelsRef.current[cell] = color;
+        drawingIdRef.current[cell] = batch.drawingId;
+        fetchBufferRef.current?.set(cell, color);
+        fetchDrawingIdBufferRef.current?.set(cell, batch.drawingId);
+        if (previous < 0) newlyPlaced++;
+        drawOne(x, y, color, batch.drawingId);
+      }
+      if (newlyPlaced > 0) {
+        setPlacedCount((count) => count + newlyPlaced);
+      }
+    };
+
     // A per-tab id so two tabs from the same user count separately. We
     // don't dedupe by user_name because we want the count to reflect how
     // many widgets are currently watching, not how many distinct people.
     const presenceKey = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     const channel: RealtimeChannel = client
-      .channel("pixels-live", {
+      .channel(PIXELS_CHANNEL, {
         config: { presence: { key: presenceKey } },
       })
       .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "pixels" },
-        (payload) => {
-          const row = (payload.new ?? payload.old) as PixelRow | undefined;
-          if (!row) return;
-          const idx = row.y * CANVAS_SIZE + row.x;
-          const prev = pixelsRef.current[idx];
-          pixelsRef.current[idx] = row.color;
-          const did = row.drawing_id ?? -1;
-          drawingIdRef.current[idx] = did;
-          // If a fetch is in flight, stash the event so it survives the
-          // buffer replacement at fetch-completion.
-          if (fetchBufferRef.current) {
-            fetchBufferRef.current.set(idx, row.color);
+        "broadcast",
+        { event: PIXEL_BATCH_EVENT },
+        (message) => {
+          if (!isPixelBatchPayload(message.payload)) {
+            console.warn("[canvas] Ignored malformed pixel batch.");
+            return;
           }
-          if (fetchDrawingIdBufferRef.current) {
-            fetchDrawingIdBufferRef.current.set(idx, did);
-          }
-          if (prev < 0 && row.color >= 0) {
-            setPlacedCount((n) => n + 1);
-          }
-          drawOne(row.x, row.y, row.color, row.drawing_id);
+          applyBatch(message.payload);
         },
       )
+      .on("broadcast", { event: CANVAS_RESET_EVENT }, () => {
+        void refreshSnapshot();
+      })
       .on("presence", { event: "sync" }, () => {
         setLiveCount(Object.keys(channel.presenceState()).length);
       })
       .subscribe(async (status) => {
         setLive(status === "SUBSCRIBED");
         if (status === "SUBSCRIBED") {
+          hasSubscribed = true;
+          void refreshSnapshot();
           // track() registers our presence on this channel; the user_name
           // is included so we could later show who's here, not just count.
           await channel.track({ user_name: userNameRef.current ?? null });
         }
       });
     channelRef.current = channel;
+
+    // If Realtime is temporarily unavailable, still show a database snapshot.
+    // A later successful subscription refreshes it again to close any gap.
+    const snapshotFallback = window.setTimeout(() => {
+      if (!hasSubscribed) void refreshSnapshot();
+    }, 3000);
+
     return () => {
+      disposed = true;
+      snapshotGeneration++;
+      window.clearTimeout(snapshotFallback);
+      fetchBufferRef.current = null;
+      fetchDrawingIdBufferRef.current = null;
       channelRef.current = null;
-      client.removeChannel(channel);
+      void client.removeChannel(channel);
     };
   }, [meta?.supabase?.url, meta?.supabase?.anonKey]);
 
   // Push name updates into the live presence record without re-creating
-  // the channel (we don't want to drop the postgres_changes subscription).
+  // the channel (we don't want to interrupt live batches).
   userNameRef.current = userName;
   useEffect(() => {
     const ch = channelRef.current;

@@ -8,9 +8,15 @@ import {
   PALETTE,
   type ColorName,
 } from "./palette.js";
+import {
+  MAX_PIXEL_BATCH,
+  PIXEL_BATCH_EVENT,
+  PIXELS_CHANNEL,
+  type PixelBatchPayload,
+} from "./realtime.js";
 import { getSupabase, getSupabasePublic } from "./supabase.js";
 
-const MAX_BATCH = 4096;
+const MAX_BATCH = MAX_PIXEL_BATCH;
 
 type PixelRow = {
   x: number;
@@ -66,10 +72,52 @@ type DrawingResult =
   | { ok: true; drawingId: number; placed: number }
   | { ok: false; error: string };
 
-// Append a drawing event + its placements, then update the projection.
-// Three sequential writes (no transaction): on partial failure the event log
-// may have an orphan drawings/placements row, but the projection stays
-// internally consistent because the pixel upsert is the last step.
+async function broadcastDrawing(
+  drawingId: number,
+  rows: PixelRow[],
+): Promise<boolean> {
+  const supa = getSupabase();
+  const channel = supa.channel(PIXELS_CHANNEL);
+  const payload: PixelBatchPayload = {
+    drawingId,
+    pixels: rows.map(({ x, y, color }) => [x, y, color]),
+  };
+
+  try {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const result = await channel.httpSend(PIXEL_BATCH_EVENT, payload, {
+          timeout: 3000,
+        });
+        if (!result.success) {
+          throw new Error(`Broadcast failed with status ${result.status}.`);
+        }
+        return true;
+      } catch (error) {
+        if (attempt === 2) throw error;
+      }
+    }
+  } catch (error) {
+    console.warn(
+      `[canvas] Drawing #${drawingId} was persisted but its Realtime batch could not be broadcast.`,
+      error,
+    );
+  } finally {
+    try {
+      await supa.removeChannel(channel);
+    } catch (error) {
+      console.warn("[canvas] Failed to clean up Broadcast channel.", error);
+    }
+  }
+
+  return false;
+}
+
+// Append a drawing event + its placements, then update the projection and
+// publish one best-effort batch. The three database writes are not a
+// transaction: on partial failure the event log may have an orphan
+// drawings/placements row, but the projection stays internally consistent
+// because the pixel upsert is the last database step.
 async function recordDrawing(
   rows: PixelRow[],
   userName: string | undefined,
@@ -119,6 +167,8 @@ async function recordDrawing(
     .from("pixels")
     .upsert(projectionRows, { onConflict: "x,y" });
   if (pixelErr) return { ok: false, error: pixelErr.message };
+
+  await broadcastDrawing(drawingId, rows);
 
   return { ok: true, drawingId, placed: rows.length };
 }

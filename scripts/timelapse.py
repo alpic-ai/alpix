@@ -18,6 +18,8 @@ Options
   --fps N           Playback speed in frames per second   [default: 4]
   --scale N         Canvas pixels per screen pixel        [default: 4]
   --freeze N        Extra seconds to hold the last frame  [default: 3]
+  --current-canvas  Render only the latest canvas era
+  --canvas-id N     Render only a specific canvas era
   --since DATE      Only include placements after this ISO date (e.g. 2025-01-01)
   --until DATE      Only include placements before this ISO date
 """
@@ -87,24 +89,44 @@ PALETTE_NP = np.array(PALETTE, dtype=np.uint8)
 # Data fetching
 # ---------------------------------------------------------------------------
 
-def fetch_placements(client, since: Optional[str], until: Optional[str]) -> list[dict]:
+def fetch_placements(
+    client,
+    since: Optional[str],
+    until: Optional[str],
+    first_placement_id: Optional[int] = None,
+    last_placement_id: Optional[int] = None,
+) -> list[dict]:
     """
     Pull all placements from Supabase ordered by placed_at, paginated.
     Returns a list of dicts with x, y, color, placed_at, drawing_id.
     """
     rows: list[dict] = []
     offset = 0
+    last_seen_id = (first_placement_id - 1) if first_placement_id else 0
 
     print("Fetching placements from Supabase…", flush=True)
     with tqdm(unit=" rows", unit_scale=True) as bar:
         while True:
-            q = (
-                client.table("placements")
-                .select("x, y, color, placed_at, drawing_id")
-                .order("placed_at", desc=False)
-                .order("id", desc=False)
-                .range(offset, offset + PAGE_SIZE - 1)
+            q = client.table("placements").select(
+                "id, x, y, color, placed_at, drawing_id"
             )
+
+            # Canvas-scoped exports use placement primary-key bounds and
+            # keyset pagination. This avoids repeatedly sorting/filtering the
+            # entire multi-million-row event log by placed_at.
+            if first_placement_id is not None:
+                q = (
+                    q.gt("id", last_seen_id)
+                    .lte("id", last_placement_id)
+                    .order("id", desc=False)
+                    .limit(PAGE_SIZE)
+                )
+            else:
+                q = (
+                    q.order("placed_at", desc=False)
+                    .order("id", desc=False)
+                    .range(offset, offset + PAGE_SIZE - 1)
+                )
             if since:
                 q = q.gte("placed_at", since)
             if until:
@@ -116,7 +138,10 @@ def fetch_placements(client, since: Optional[str], until: Optional[str]) -> list
             bar.update(len(batch))
             if len(batch) < PAGE_SIZE:
                 break
-            offset += PAGE_SIZE
+            if first_placement_id is not None:
+                last_seen_id = batch[-1]["id"]
+            else:
+                offset += PAGE_SIZE
 
     print(f"  {len(rows):,} placements loaded across {_count_drawings(rows):,} drawings.")
     return rows
@@ -124,6 +149,70 @@ def fetch_placements(client, since: Optional[str], until: Optional[str]) -> list
 
 def _count_drawings(rows: list[dict]) -> int:
     return len({r["drawing_id"] for r in rows})
+
+
+def resolve_canvas_placement_bounds(client, canvas_id: Optional[int]) -> tuple[int, int, int]:
+    """Return (canvas_id, first_placement_id, last_placement_id)."""
+    if canvas_id is None:
+        canvas_resp = (
+            client.table("canvases")
+            .select("id")
+            .order("id", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not canvas_resp.data:
+            raise RuntimeError("No canvases found")
+        canvas_id = int(canvas_resp.data[0]["id"])
+
+    first_drawing = (
+        client.table("drawings")
+        .select("id")
+        .eq("canvas_id", canvas_id)
+        .order("id", desc=False)
+        .limit(1)
+        .execute()
+    )
+    last_drawing = (
+        client.table("drawings")
+        .select("id")
+        .eq("canvas_id", canvas_id)
+        .order("id", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not first_drawing.data or not last_drawing.data:
+        raise RuntimeError(f"Canvas #{canvas_id} has no drawings")
+
+    first_drawing_id = int(first_drawing.data[0]["id"])
+    last_drawing_id = int(last_drawing.data[0]["id"])
+
+    first_placement = (
+        client.table("placements")
+        .select("id")
+        .gte("drawing_id", first_drawing_id)
+        .lte("drawing_id", last_drawing_id)
+        .order("id", desc=False)
+        .limit(1)
+        .execute()
+    )
+    last_placement = (
+        client.table("placements")
+        .select("id")
+        .gte("drawing_id", first_drawing_id)
+        .lte("drawing_id", last_drawing_id)
+        .order("id", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not first_placement.data or not last_placement.data:
+        raise RuntimeError(f"Canvas #{canvas_id} has no placements")
+
+    return (
+        canvas_id,
+        int(first_placement.data[0]["id"]),
+        int(last_placement.data[0]["id"]),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +255,11 @@ def parse_args() -> argparse.Namespace:
                    help="Canvas pixels per screen pixel (upscale factor)")
     p.add_argument("--freeze", type=float, default=3.0,
                    help="Seconds to hold the final frame")
+    canvas_scope = p.add_mutually_exclusive_group()
+    canvas_scope.add_argument("--current-canvas", action="store_true",
+                              help="Only include the latest canvas era")
+    canvas_scope.add_argument("--canvas-id", type=int, default=None,
+                              help="Only include the specified canvas era")
     p.add_argument("--since", default=None,
                    help="Only include placements after this ISO datetime")
     p.add_argument("--until", default=None,
@@ -186,7 +280,28 @@ def main():
 
     client = create_client(url, key)
 
-    placements = fetch_placements(client, args.since, args.until)
+    first_placement_id = None
+    last_placement_id = None
+    if args.current_canvas or args.canvas_id is not None:
+        requested_canvas_id = args.canvas_id if args.canvas_id is not None else None
+        try:
+            canvas_id, first_placement_id, last_placement_id = (
+                resolve_canvas_placement_bounds(client, requested_canvas_id)
+            )
+        except RuntimeError as exc:
+            sys.exit(f"Error: {exc}")
+        print(
+            f"Rendering canvas #{canvas_id} "
+            f"(placement ids {first_placement_id:,}–{last_placement_id:,})."
+        )
+
+    placements = fetch_placements(
+        client,
+        args.since,
+        args.until,
+        first_placement_id,
+        last_placement_id,
+    )
     if not placements:
         sys.exit("No placements found — nothing to render.")
 
