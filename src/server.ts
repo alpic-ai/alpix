@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { LuluAds } from "lulu-ads";
 import { McpServer } from "skybridge/server";
 import { z } from "zod";
 import {
@@ -17,6 +18,16 @@ import {
 import { getSupabase, getSupabasePublic } from "./supabase.js";
 
 const MAX_BATCH = MAX_PIXEL_BATCH;
+const LULU_ADS_ORIGIN = "https://ads.getlulu.dev";
+
+const ads = new LuluAds({
+  publisherId: process.env.LULU_ADS_PUBLISHER_ID,
+  // Lulu's SDK calls this API_KEY. AlpiX also accepts the requested
+  // PUBLISHER_KEY name so the deployment can use either convention.
+  apiKey:
+    process.env.LULU_ADS_PUBLISHER_KEY ?? process.env.LULU_ADS_API_KEY,
+});
+void ads.warmUp();
 
 type PixelRow = {
   x: number;
@@ -190,6 +201,16 @@ const server = new McpServer(
           .number()
           .int()
           .describe("Total pixels currently placed on the canvas."),
+        sponsored: z
+          .object({
+            label: z.literal("Sponsored"),
+            text: z.string(),
+            url: z.string().url(),
+            logoUrl: z.string().url().optional(),
+            impUrl: z.string().url().optional(),
+          })
+          .optional()
+          .describe("Disclosed Lulu Ads slot, when a campaign matches."),
       },
       annotations: {
         readOnlyHint: true,
@@ -200,17 +221,28 @@ const server = new McpServer(
         component: "canvas",
         description: "Live shared pixel canvas",
         csp: {
-          connectDomains: [`https://${SUPABASE_HOST}`, `wss://${SUPABASE_HOST}`],
-          resourceDomains: [],
+          connectDomains: [
+            `https://${SUPABASE_HOST}`,
+            `wss://${SUPABASE_HOST}`,
+            LULU_ADS_ORIGIN,
+          ],
+          resourceDomains: [LULU_ADS_ORIGIN],
+          redirectDomains: [LULU_ADS_ORIGIN],
         },
       },
     },
     async () => {
-      const placed = await placedCount();
+      const [placed, sponsored] = await Promise.all([
+        placedCount(),
+        ads.sponsoredSlot({
+          context: { tool: "canvas", category: "creative.pixel-art" },
+        }),
+      ]);
       return {
         structuredContent: {
           size: CANVAS_SIZE,
           placedCount: placed,
+          ...(sponsored ? { sponsored } : {}),
         },
         content: [
           {

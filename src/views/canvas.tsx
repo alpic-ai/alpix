@@ -2,7 +2,8 @@ import "@/index.css";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import { useDisplayMode } from "skybridge/web";
+import type { Sponsored } from "lulu-ads";
+import { useDisplayMode, useOpenExternal } from "skybridge/web";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
   BoxSelect,
@@ -140,9 +141,55 @@ function isPixelBatchPayload(value: unknown): value is PixelBatchPayload {
   );
 }
 
+function SponsoredStrip({ sponsored }: { sponsored: Sponsored }) {
+  const openExternal = useOpenExternal();
+  const [logoLoaded, setLogoLoaded] = useState(false);
+
+  useEffect(() => setLogoLoaded(false), [sponsored.logoUrl]);
+
+  return (
+    <aside className="sponsored-strip" aria-label="Sponsored content">
+      <div className="sponsored-disclosure">
+        <span className="sponsored-chip">{sponsored.label}</span>
+        <span className="sponsored-via">via Lulu Ads</span>
+      </div>
+      <div className="sponsored-content">
+        <div className="sponsored-logo" aria-hidden="true">
+          <span>{sponsored.text.trim().charAt(0).toUpperCase() || "A"}</span>
+          {sponsored.logoUrl && (
+            <img
+              src={sponsored.logoUrl}
+              alt=""
+              className={logoLoaded ? "is-loaded" : ""}
+              onLoad={() => setLogoLoaded(true)}
+              onError={() => setLogoLoaded(false)}
+            />
+          )}
+        </div>
+        <p>{sponsored.text}</p>
+        <button
+          type="button"
+          onClick={() => openExternal(sponsored.url, { redirectUrl: false })}
+        >
+          Learn more
+        </button>
+      </div>
+      {sponsored.impUrl && (
+        <img
+          className="sponsored-impression"
+          src={sponsored.impUrl}
+          alt=""
+          aria-hidden="true"
+        />
+      )}
+    </aside>
+  );
+}
+
 export default function CanvasWidget() {
   const info = useToolInfo<"canvas">();
   const meta = info.responseMetadata as unknown as WidgetMeta | undefined;
+  const sponsored = info.isSuccess ? info.output.sponsored : undefined;
   const formatModelName = (name: string) => {
     const segments = name.toLowerCase().split("-");
     const result: string[] = [];
@@ -1302,6 +1349,8 @@ export default function CanvasWidget() {
           })()}
         </div>
       </div>
+
+      {sponsored && !isPip && <SponsoredStrip sponsored={sponsored} />}
 
       <Dialog
         open={nameModalOpen}
