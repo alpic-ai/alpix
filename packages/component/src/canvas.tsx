@@ -1,9 +1,7 @@
-import "@/index.css";
+import "./styles.css";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import type { Sponsored } from "lulu-ads";
-import { useDisplayMode, useOpenExternal } from "skybridge/web";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
   BoxSelect,
@@ -26,6 +24,7 @@ import {
   DialogTitle,
 } from "@alpic-ai/ui/components/dialog";
 import { Input } from "@alpic-ai/ui/components/input";
+import { Spinner } from "@alpic-ai/ui/components/spinner";
 import {
   Popover,
   PopoverAnchor,
@@ -33,35 +32,64 @@ import {
   PopoverTrigger,
 } from "@alpic-ai/ui/components/popover";
 import { Arrow as PopoverArrow } from "@radix-ui/react-popover";
-import { useToolInfo } from "../helpers.js";
+import { CANVAS_SIZE } from "./palette.js";
 import {
   CANVAS_RESET_EVENT,
   MAX_PIXEL_BATCH,
   PIXEL_BATCH_EVENT,
   PIXELS_CHANNEL,
   type PixelBatchPayload,
-} from "../realtime.js";
-
-const CANVAS_SIZE = 256;
+} from "./realtime.js";
+import {
+  displayNameToolParam,
+  nameFormToolAttrs,
+  type WebMcpSubmitEvent,
+} from "./webmcp.js";
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 32;
 const EMPTY_R = 240;
 const EMPTY_G = 240;
 const EMPTY_B = 240;
 
-type WidgetMeta = {
+export type CanvasConfig = {
   supabase: { url: string; anonKey: string };
   palette: string[];
-  // Max pixels the model can place in a single tool call. The selection zone
-  // can't exceed this area, otherwise the model wouldn't be able to fill it.
   maxBatch?: number;
+};
+
+export type DisplayMode = "inline" | "fullscreen" | "pip" | "modal";
+
+export type Rect = { x: number; y: number; w: number; h: number };
+
+export type SponsoredSlot = {
+  label: "Sponsored";
+  text: string;
+  url: string;
+  logoUrl?: string;
+  impUrl?: string;
+};
+
+export type PixelCanvasProps = {
+  config: CanvasConfig;
+  displayMode?: DisplayMode;
+  onDisplayModeChange?: (mode: DisplayMode) => void;
+  showDisplayModeControls?: boolean;
+  sponsored?: SponsoredSlot | null;
+  onOpenExternal?: (url: string) => void;
+  onSelectionChange?: (selection: Rect | null) => void;
+  onUserNameChange?: (userName: string | null) => void;
+  statusMessage?: string | null;
+  className?: string;
+};
+
+export type PixelCanvasHandle = {
+  /** Commit or clear the drawing zone without going through select-mode drag. */
+  applySelection: (rect: Rect | null) => void;
 };
 
 type PixelRow = { x: number; y: number; color: number; drawing_id?: number | null };
 
 type DragStart = { mx: number; my: number; ox: number; oy: number };
-
-type Rect = { x: number; y: number; w: number; h: number };
 
 type Mode = "pan" | "select";
 
@@ -141,8 +169,13 @@ function isPixelBatchPayload(value: unknown): value is PixelBatchPayload {
   );
 }
 
-function SponsoredStrip({ sponsored }: { sponsored: Sponsored }) {
-  const openExternal = useOpenExternal();
+function SponsoredStrip({
+  sponsored,
+  onOpenExternal,
+}: {
+  sponsored: SponsoredSlot;
+  onOpenExternal?: (url: string) => void;
+}) {
   const [logoLoaded, setLogoLoaded] = useState(false);
 
   useEffect(() => setLogoLoaded(false), [sponsored.logoUrl]);
@@ -169,7 +202,7 @@ function SponsoredStrip({ sponsored }: { sponsored: Sponsored }) {
         <p>{sponsored.text}</p>
         <button
           type="button"
-          onClick={() => openExternal(sponsored.url, { redirectUrl: false })}
+          onClick={() => onOpenExternal?.(sponsored.url)}
         >
           Learn more
         </button>
@@ -186,10 +219,22 @@ function SponsoredStrip({ sponsored }: { sponsored: Sponsored }) {
   );
 }
 
-export default function CanvasWidget() {
-  const info = useToolInfo<"canvas">();
-  const meta = info.responseMetadata as unknown as WidgetMeta | undefined;
-  const sponsored = info.isSuccess ? info.output.sponsored : undefined;
+export const PixelCanvas = forwardRef<PixelCanvasHandle, PixelCanvasProps>(
+  function PixelCanvas(
+    {
+      config,
+      displayMode: displayModeProp,
+      onDisplayModeChange,
+      showDisplayModeControls = false,
+      sponsored = null,
+      onOpenExternal,
+      onSelectionChange,
+      onUserNameChange,
+      statusMessage = null,
+      className,
+    },
+    ref,
+  ) {
   const formatModelName = (name: string) => {
     const segments = name.toLowerCase().split("-");
     const result: string[] = [];
@@ -210,7 +255,22 @@ export default function CanvasWidget() {
     return result.join(" ");
   };
 
-  const [displayMode, setDisplayMode] = useDisplayMode();
+  const [localDisplayMode, setLocalDisplayMode] = useState<DisplayMode>("inline");
+  const isControlled = onDisplayModeChange !== undefined;
+  const displayMode = isControlled
+    ? (displayModeProp ?? "inline")
+    : localDisplayMode;
+  const setDisplayMode = (mode: DisplayMode) => {
+    if (isControlled) {
+      onDisplayModeChange?.(mode);
+    } else {
+      setLocalDisplayMode(mode);
+    }
+  };
+  const isFullscreenLayout =
+    displayMode === "fullscreen" ||
+    (className?.includes("h-full") ?? false) ||
+    (className?.includes("min-h-full") ?? false);
   const isFullscreen = displayMode === "fullscreen";
   const isPip = displayMode === "pip";
 
@@ -236,6 +296,9 @@ export default function CanvasWidget() {
   const fetchDrawingIdBufferRef = useRef<Map<number, number> | null>(null);
   const [live, setLive] = useState(false);
   const [placedCount, setPlacedCount] = useState(0);
+  // False until the first pixel snapshot settles (or gives up), so the board
+  // isn't shown as an empty grid while rows are still paginating in.
+  const [snapshotSettled, setSnapshotSettled] = useState(false);
   // How many widgets currently have an active websocket — driven by
   // Supabase Realtime Presence on the same channel we use for pixel updates.
   const [liveCount, setLiveCount] = useState(0);
@@ -270,6 +333,15 @@ export default function CanvasWidget() {
   const [selection, setSelection] = useState<Rect | null>(null);
   const [selectionDraft, setSelectionDraft] = useState<Rect | null>(null);
   const selectionStart = useRef<{ x: number; y: number } | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    applySelection(rect) {
+      setSelection(rect);
+      setSelectionDraft(null);
+      selectionStart.current = null;
+      if (rect) setMode("pan");
+    },
+  }));
 
   // Click-to-inspect: click a placed pixel to see who drew it.
   type DrawingMeta = {
@@ -321,22 +393,14 @@ export default function CanvasWidget() {
     () => loadStoredName() ?? randomName(),
   );
 
-  function confirmName() {
-    const trimmed = nameDraft.trim().slice(0, 40);
-    if (!trimmed) return;
-    saveStoredName(trimmed);
-    setUserName(trimmed);
-    setNameModalOpen(false);
-  }
-
   function openNameModal() {
     setNameDraft(userName ?? randomName());
     setNameModalOpen(true);
   }
 
   const paletteRgb = useMemo(
-    () => (meta?.palette ?? []).map(hexToRgb),
-    [meta?.palette],
+    () => (config?.palette ?? []).map(hexToRgb),
+    [config?.palette],
   );
   const paletteRgbRef = useRef(paletteRgb);
   paletteRgbRef.current = paletteRgb;
@@ -434,11 +498,14 @@ export default function CanvasWidget() {
   // fetch/subscription race that could otherwise lose a drawing.
   // biome-ignore lint/correctness/useExhaustiveDependencies: ignore Realtime subscription — other clients' writes + our own confirmations.
   useEffect(() => {
-    if (!meta?.supabase?.url || !meta?.supabase?.anonKey) return;
+    if (!config?.supabase?.url || !config?.supabase?.anonKey) {
+      setSnapshotSettled(true);
+      return;
+    }
     let disposed = false;
     let snapshotGeneration = 0;
     let hasSubscribed = false;
-    const client = createClient(meta.supabase.url, meta.supabase.anonKey, {
+    const client = createClient(config.supabase.url, config.supabase.anonKey, {
       auth: { persistSession: false },
     });
 
@@ -493,11 +560,14 @@ export default function CanvasWidget() {
         drawingIdRef.current = idBuf;
         setPlacedCount(count);
         setSnapshotVersion((version) => version + 1);
+        setSnapshotSettled(true);
       } catch (error) {
         if (disposed || generation !== snapshotGeneration) return;
         console.warn("[canvas] snapshot fetch failed:", error);
         fetchBufferRef.current = null;
         fetchDrawingIdBufferRef.current = null;
+        // Reveal the board anyway — an empty canvas beats an endless spinner.
+        setSnapshotSettled(true);
       }
     };
 
@@ -570,7 +640,7 @@ export default function CanvasWidget() {
       channelRef.current = null;
       void client.removeChannel(channel);
     };
-  }, [meta?.supabase?.url, meta?.supabase?.anonKey]);
+  }, [config?.supabase?.url, config?.supabase?.anonKey]);
 
   // Push name updates into the live presence record without re-creating
   // the channel (we don't want to interrupt live batches).
@@ -580,6 +650,14 @@ export default function CanvasWidget() {
     if (!ch) return;
     void ch.track({ user_name: userName ?? null });
   }, [userName]);
+
+  useEffect(() => {
+    onSelectionChange?.(selection);
+  }, [selection, onSelectionChange]);
+
+  useEffect(() => {
+    onUserNameChange?.(userName);
+  }, [userName, onUserNameChange]);
 
   // Pan + zoom transforms.
   const baseScale =
@@ -667,7 +745,7 @@ export default function CanvasWidget() {
   // Cap the selection to the model's per-call pixel budget. Default 1000
   // matches the server's MAX_BATCH; the server passes its actual value via
   // widgetMeta so the two stay in sync if it ever changes.
-  const maxArea = meta?.maxBatch ?? 1000;
+  const maxArea = config?.maxBatch ?? 1000;
 
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (e.button !== 0) return;
@@ -849,13 +927,13 @@ export default function CanvasWidget() {
       setPopover(null);
       return;
     }
-    if (!meta?.supabase?.url || !meta?.supabase?.anonKey) return;
+    if (!config?.supabase?.url || !config?.supabase?.anonKey) return;
     // Anchor the popover at the centre of the clicked pixel (not the mouse)
     // so the arrow points at the pixel itself.
     const ax = tx + (cx + 0.5) * totalScale;
     const ay = ty + (cy + 0.5) * totalScale;
     setPopover({ ax, ay, cx, cy, loading: true, drawing: null });
-    const client = createClient(meta.supabase.url, meta.supabase.anonKey, {
+    const client = createClient(config.supabase.url, config.supabase.anonKey, {
       auth: { persistSession: false },
     });
     const { data, error } = await client
@@ -883,9 +961,9 @@ export default function CanvasWidget() {
 
   async function openLeaderboard() {
     setLeaderboardOpen(true);
-    if (!meta?.supabase?.url || !meta?.supabase?.anonKey) return;
+    if (!config?.supabase?.url || !config?.supabase?.anonKey) return;
     setLeaderboardLoading(true);
-    const client = createClient(meta.supabase.url, meta.supabase.anonKey, {
+    const client = createClient(config.supabase.url, config.supabase.anonKey, {
       auth: { persistSession: false },
     });
     // Resolve the current canvas id, then fetch drawings for it only.
@@ -1029,13 +1107,18 @@ export default function CanvasWidget() {
   const tx = centerX + offset.x;
   const ty = centerY + offset.y;
   const measured = outerSize.w > 0 && outerSize.h > 0;
-  const ready = !!meta && measured;
+  const ready = !!config && measured && snapshotSettled;
 
   return (
     <div
-      className={`canvas-wrap ${isFullscreen ? "fullscreen" : ""}`}
+      className={`canvas-wrap ${isFullscreenLayout ? "fullscreen" : ""}${className ? ` ${className}` : ""}`}
       data-llm={`Pixel canvas ${CANVAS_SIZE}x${CANVAS_SIZE}, ${placedCount} pixels placed${live ? "" : " (connecting)"}.${userName ? ` The user's chosen name is "${userName}" — pass this as user_name on every stamp-grid call.` : ""}${selection ? ` The user selected a target zone: x=${selection.x}, y=${selection.y}, width=${selection.w}, height=${selection.h}. Place the drawing inside this rectangle (top-left at (${selection.x},${selection.y}), bottom-right exclusive at (${selection.x + selection.w},${selection.y + selection.h})).` : ""} Use stamp-grid to draw.`}
     >
+      {statusMessage && (
+        <div className="flex shrink-0 items-center border-b border-border/40 bg-muted/80 px-3 py-2 text-xs text-muted-foreground backdrop-blur-sm">
+          {statusMessage}
+        </div>
+      )}
       <div
         ref={outerRef}
         className={`canvas-outer ${isDragging ? "dragging" : ""} ${mode === "select" ? "select-mode" : ""}`}
@@ -1060,6 +1143,13 @@ export default function CanvasWidget() {
             opacity: ready ? 1 : 0,
           }}
         />
+
+        {!ready && (
+          <div className="canvas-loader" role="status" aria-live="polite">
+            <Spinner size="lg" />
+            <span>Loading canvas…</span>
+          </div>
+        )}
 
         {hoverCell && !selectionDraft && !isDragging && (
           <div
@@ -1284,7 +1374,7 @@ export default function CanvasWidget() {
           >
             <BoxSelect size={16} />
           </button>
-          {!isPip && (
+          {!isPip && showDisplayModeControls && (
             <button
               type="button"
               aria-label="Picture in picture"
@@ -1295,6 +1385,7 @@ export default function CanvasWidget() {
               <PictureInPicture2 size={16} />
             </button>
           )}
+          {showDisplayModeControls && (
           <button
             type="button"
             aria-label={isFullscreen ? "Collapse" : "Fullscreen"}
@@ -1306,6 +1397,7 @@ export default function CanvasWidget() {
           >
             {isFullscreen || isPip ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
+          )}
         </div>
 
         <div className="absolute top-2 left-2 flex max-w-[60%] items-center gap-1.5" style={isFullscreen ? { top: 'calc(0.5rem + env(safe-area-inset-top, 0px))' } : undefined}>
@@ -1350,7 +1442,9 @@ export default function CanvasWidget() {
         </div>
       </div>
 
-      {sponsored && !isPip && <SponsoredStrip sponsored={sponsored} />}
+      {sponsored && !isPip && (
+        <SponsoredStrip sponsored={sponsored} onOpenExternal={onOpenExternal} />
+      )}
 
       <Dialog
         open={nameModalOpen}
@@ -1370,9 +1464,45 @@ export default function CanvasWidget() {
           className="backdrop-blur-md"
         >
           <form
+            {...nameFormToolAttrs}
             onSubmit={(e) => {
               e.preventDefault();
-              confirmName();
+              const native = e.nativeEvent as WebMcpSubmitEvent;
+              const fromForm = new FormData(e.currentTarget).get("display_name");
+              const trimmed = (
+                typeof fromForm === "string" ? fromForm : nameDraft
+              )
+                .trim()
+                .slice(0, 40);
+              if (!trimmed) {
+                if (native.agentInvoked && native.respondWith) {
+                  native.respondWith(
+                    Promise.resolve({
+                      ok: false,
+                      error: "Display name cannot be empty.",
+                    }),
+                  );
+                }
+                return;
+              }
+              saveStoredName(trimmed);
+              setUserName(trimmed);
+              setNameDraft(trimmed);
+              // Keep the form mounted until the agent call can settle.
+              // Unregistering set-display-name in the same turn hangs Chrome's
+              // execute_webmcp_tool.
+              if (native.agentInvoked && native.respondWith) {
+                native.respondWith(
+                  Promise.resolve({
+                    ok: true,
+                    display_name: trimmed,
+                    next: "stamp-grid is now available.",
+                  }),
+                );
+                window.setTimeout(() => setNameModalOpen(false), 50);
+              } else {
+                setNameModalOpen(false);
+              }
             }}
           >
             <DialogHeader>
@@ -1384,11 +1514,19 @@ export default function CanvasWidget() {
             <div className="mt-4 flex items-end gap-2">
               <div className="flex-1">
                 <Input
+                  id="display_name"
+                  name="display_name"
                   autoFocus
                   type="text"
+                  required
+                  label="Display name"
                   value={nameDraft}
                   maxLength={40}
+                  {...displayNameToolParam}
                   onChange={(e) => setNameDraft(e.target.value)}
+                  onInput={(e) =>
+                    setNameDraft((e.target as HTMLInputElement).value)
+                  }
                 />
               </div>
               <Button
@@ -1416,4 +1554,7 @@ export default function CanvasWidget() {
       </Dialog>
     </div>
   );
-}
+  },
+);
+
+export default PixelCanvas;

@@ -4,17 +4,11 @@ import { McpServer } from "skybridge/server";
 import { z } from "zod";
 import {
   CANVAS_SIZE,
-  COLOR_INDEX,
   COLOR_NAMES,
-  PALETTE,
-  type ColorName,
-} from "./palette.js";
-import {
   MAX_PIXEL_BATCH,
-  PIXEL_BATCH_EVENT,
-  PIXELS_CHANNEL,
-  type PixelBatchPayload,
-} from "./realtime.js";
+  PALETTE_HEX,
+  stampGrid,
+} from "@alpix/component";
 import { getSupabase, getSupabasePublic } from "./supabase.js";
 
 const MAX_BATCH = MAX_PIXEL_BATCH;
@@ -22,21 +16,10 @@ const LULU_ADS_ORIGIN = "https://ads.getlulu.dev";
 
 const ads = new LuluAds({
   publisherId: process.env.LULU_ADS_PUBLISHER_ID,
-  // Lulu's SDK calls this API_KEY. AlpiX also accepts the requested
-  // PUBLISHER_KEY name so the deployment can use either convention.
   apiKey:
     process.env.LULU_ADS_PUBLISHER_KEY ?? process.env.LULU_ADS_API_KEY,
 });
 void ads.warmUp();
-
-type PixelRow = {
-  x: number;
-  y: number;
-  color: number;
-  updated_at: string;
-};
-
-const PALETTE_HEX = PALETTE.map((p) => p.hex);
 
 const SUPABASE_HOST = (() => {
   try {
@@ -47,16 +30,6 @@ const SUPABASE_HOST = (() => {
     return "placeholder.supabase.co";
   }
 })();
-
-async function getCurrentCanvasId(): Promise<number> {
-  const { data } = await getSupabase()
-    .from("canvases")
-    .select("id")
-    .order("id", { ascending: false })
-    .limit(1)
-    .single();
-  return (data as { id: number } | null)?.id ?? 1;
-}
 
 function widgetMeta() {
   return {
@@ -79,109 +52,14 @@ async function placedCount(): Promise<number> {
   }
 }
 
-type DrawingResult =
-  | { ok: true; drawingId: number; placed: number }
-  | { ok: false; error: string };
-
-async function broadcastDrawing(
-  drawingId: number,
-  rows: PixelRow[],
-): Promise<boolean> {
-  const supa = getSupabase();
-  const channel = supa.channel(PIXELS_CHANNEL);
-  const payload: PixelBatchPayload = {
-    drawingId,
-    pixels: rows.map(({ x, y, color }) => [x, y, color]),
-  };
-
-  try {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const result = await channel.httpSend(PIXEL_BATCH_EVENT, payload, {
-          timeout: 3000,
-        });
-        if (!result.success) {
-          throw new Error(`Broadcast failed with status ${result.status}.`);
-        }
-        return true;
-      } catch (error) {
-        if (attempt === 2) throw error;
-      }
-    }
-  } catch (error) {
-    console.warn(
-      `[canvas] Drawing #${drawingId} was persisted but its Realtime batch could not be broadcast.`,
-      error,
-    );
-  } finally {
-    try {
-      await supa.removeChannel(channel);
-    } catch (error) {
-      console.warn("[canvas] Failed to clean up Broadcast channel.", error);
-    }
-  }
-
-  return false;
-}
-
-// Append a drawing event + its placements, then update the projection and
-// publish one best-effort batch. The three database writes are not a
-// transaction: on partial failure the event log may have an orphan
-// drawings/placements row, but the projection stays internally consistent
-// because the pixel upsert is the last database step.
-async function recordDrawing(
-  rows: PixelRow[],
-  userName: string | undefined,
-  modelName: string | undefined,
-  toolName: string,
-): Promise<DrawingResult> {
-  const supa = getSupabase();
-  const canvasId = await getCurrentCanvasId();
-  const { data: drawing, error: drawingErr } = await supa
-    .from("drawings")
-    .insert({
-      user_name: userName ?? null,
-      model_name: modelName ?? null,
-      tool_name: toolName,
-      pixel_count: rows.length,
-      canvas_id: canvasId,
-    })
+async function getCurrentCanvasId(): Promise<number> {
+  const { data } = await getSupabase()
+    .from("canvases")
     .select("id")
+    .order("id", { ascending: false })
+    .limit(1)
     .single();
-  if (drawingErr || !drawing) {
-    return {
-      ok: false,
-      error: drawingErr?.message ?? "drawings insert returned no row",
-    };
-  }
-  const drawingId = drawing.id as number;
-
-  const placementRows = rows.map((r) => ({
-    drawing_id: drawingId,
-    x: r.x,
-    y: r.y,
-    color: r.color,
-  }));
-  const { error: placementErr } = await supa
-    .from("placements")
-    .insert(placementRows);
-  if (placementErr) return { ok: false, error: placementErr.message };
-
-  const projectionRows = rows.map((r) => ({
-    x: r.x,
-    y: r.y,
-    color: r.color,
-    drawing_id: drawingId,
-    updated_at: r.updated_at,
-  }));
-  const { error: pixelErr } = await supa
-    .from("pixels")
-    .upsert(projectionRows, { onConflict: "x,y" });
-  if (pixelErr) return { ok: false, error: pixelErr.message };
-
-  await broadcastDrawing(drawingId, rows);
-
-  return { ok: true, drawingId, placed: rows.length };
+  return (data as { id: number } | null)?.id ?? 1;
 }
 
 const server = new McpServer(
@@ -293,12 +171,9 @@ const server = new McpServer(
             "Multi-line ASCII grid. Each line is one row of pixels; each character is one pixel. Use newline ('\\n') between rows.",
           ),
         legend: z
-          .record(
-            z.string(),
-            z.enum([...COLOR_NAMES]),
-          )
+          .record(z.string(), z.enum([...COLOR_NAMES]))
           .describe(
-            "Map from single-character keys to palette color names, e.g. {\"R\": \"red\", \"B\": \"blue\"}. Any character in the grid not present here is treated as transparent (skipped).",
+            'Map from single-character keys to palette color names, e.g. {"R": "red", "B": "blue"}. Any character in the grid not present here is treated as transparent (skipped).',
           ),
         user_name: z
           .string()
@@ -331,119 +206,46 @@ const server = new McpServer(
         destructiveHint: true,
       },
     },
-    async ({ x, y, grid, legend, user_name, model_name: rawModelName }) => {
-      const model_name = rawModelName
-        ? rawModelName.trim().toLowerCase().replace(/[\s_]+/g, "-")
-        : undefined;
-      for (const key of Object.keys(legend)) {
-        if (key.length !== 1) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Legend key ${JSON.stringify(key)} must be exactly one character.`,
-              },
-            ],
-            isError: true,
-          };
-        }
-      }
-
-      const lines = grid.split("\n");
-      if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
-      const height = lines.length;
-      const width = Math.max(...lines.map((l) => l.length));
-      if (height === 0 || width === 0) {
-        return {
-          content: [{ type: "text", text: "Grid is empty." }],
-          isError: true,
-        };
-      }
-      if (x + width > CANVAS_SIZE || y + height > CANVAS_SIZE) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Grid (${width}x${height}) at (${x},${y}) would extend past the ${CANVAS_SIZE}x${CANVAS_SIZE} canvas. Reduce size or move the origin closer to (0,0).`,
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      const now = new Date().toISOString();
-      const byKey = new Map<string, PixelRow>();
-      let skipped = 0;
-      for (let row = 0; row < height; row++) {
-        const line = lines[row];
-        for (let col = 0; col < width; col++) {
-          const ch = line[col];
-          const colorName = (legend as Record<string, ColorName>)[ch];
-          if (!colorName) {
-            skipped++;
-            continue;
-          }
-          const px = x + col;
-          const py = y + row;
-          byKey.set(`${px},${py}`, {
-            x: px,
-            y: py,
-            color: COLOR_INDEX[colorName],
-            updated_at: now,
-          });
-        }
-      }
-
-      const rows = [...byKey.values()];
-      if (rows.length > MAX_BATCH) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Stamp would place ${rows.length} pixels, exceeding the ${MAX_BATCH} limit per call. Split the drawing into smaller stamps.`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      if (rows.length === 0) {
-        return {
-          structuredContent: { placed: 0, skipped, width, height },
-          content: [
-            {
-              type: "text",
-              text: `No pixels placed — all ${skipped} cells were transparent (no legend match).`,
-            },
-          ],
-        };
-      }
-
-      const result = await recordDrawing(
-        rows,
-        user_name,
-        model_name,
-        "stamp-grid",
+    async ({ x, y, grid, legend, user_name, model_name }) => {
+      const result = await stampGrid(
+        getSupabase(),
+        { x, y, grid, legend, user_name, model_name },
+        { maxBatch: MAX_BATCH },
       );
       if (!result.ok) {
         return {
-          content: [
-            { type: "text", text: `Failed to place pixels: ${result.error}` },
-          ],
+          content: [{ type: "text", text: result.error }],
           isError: true,
+        };
+      }
+      if (result.placed === 0) {
+        return {
+          structuredContent: {
+            placed: 0,
+            skipped: result.skipped,
+            width: result.width,
+            height: result.height,
+          },
+          content: [
+            {
+              type: "text",
+              text: `No pixels placed — all ${result.skipped} cells were transparent (no legend match).`,
+            },
+          ],
         };
       }
       return {
         structuredContent: {
           placed: result.placed,
-          skipped,
-          width,
-          height,
-          drawing_id: result.drawingId,
+          skipped: result.skipped,
+          width: result.width,
+          height: result.height,
+          drawing_id: result.drawing_id,
         },
         content: [
           {
             type: "text",
-            text: `Stamped ${width}x${height} grid at (${x},${y}): placed ${result.placed} pixel${result.placed === 1 ? "" : "s"}, ${skipped} transparent (drawing #${result.drawingId}).`,
+            text: `Stamped ${result.width}x${result.height} grid at (${x},${y}): placed ${result.placed} pixel${result.placed === 1 ? "" : "s"}, ${result.skipped} transparent (drawing #${result.drawing_id}).`,
           },
         ],
       };
@@ -452,7 +254,8 @@ const server = new McpServer(
   .registerTool(
     {
       name: "get-leaderboard",
-      description: "Fetch the pixel leaderboard for the current canvas — a ranked list of AI models by total pixels placed.",
+      description:
+        "Fetch the pixel leaderboard for the current canvas — a ranked list of AI models by total pixels placed.",
       inputSchema: {},
       outputSchema: {
         leaderboard: z
@@ -481,22 +284,40 @@ const server = new McpServer(
 
       if (error) {
         return {
-          content: [{ type: "text", text: `Failed to fetch leaderboard: ${error.message}` }],
+          content: [
+            {
+              type: "text",
+              text: `Failed to fetch leaderboard: ${error.message}`,
+            },
+          ],
           isError: true,
         };
       }
 
       const totals = new Map<string, number>();
       for (const row of data as { model_name: string; pixel_count: number }[]) {
-        totals.set(row.model_name, (totals.get(row.model_name) ?? 0) + row.pixel_count);
+        totals.set(
+          row.model_name,
+          (totals.get(row.model_name) ?? 0) + row.pixel_count,
+        );
       }
       const ranked = [...totals.entries()]
         .sort((a, b) => b[1] - a[1])
-        .map(([model_name, pixels], i) => ({ rank: i + 1, model_name, pixels }));
+        .map(([model_name, pixels], i) => ({
+          rank: i + 1,
+          model_name,
+          pixels,
+        }));
 
-      const text = ranked.length === 0
-        ? "No drawings on the current canvas yet."
-        : ranked.map(e => `${e.rank}. ${e.model_name} — ${e.pixels.toLocaleString()} px`).join("\n");
+      const text =
+        ranked.length === 0
+          ? "No drawings on the current canvas yet."
+          : ranked
+              .map(
+                (e) =>
+                  `${e.rank}. ${e.model_name} — ${e.pixels.toLocaleString()} px`,
+              )
+              .join("\n");
 
       return {
         structuredContent: { leaderboard: ranked },

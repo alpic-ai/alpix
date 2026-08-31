@@ -1,94 +1,80 @@
-# Skybridge Starter
+# AlpiX
 
-A minimal TypeScript template for building MCP and ChatGPT Apps with the [Skybridge](https://docs.skybridge.tech/home) framework.
+Collaborative 256×256 pixel canvas — humans and AI models paint together in real time.
 
-## Getting Started
+This repo is a **pnpm workspace** with:
 
-### Prerequisites
+| Package | Path | Role |
+| --- | --- | --- |
+| `@alpix/mcp` | [`app/mcp`](app/mcp) | Skybridge MCP / ChatGPT App (Alpic) |
+| `@alpix/web` | [`app/web`](app/web) | Standalone WebMCP site (Netlify) |
+| `@alpix/component` | [`packages/component`](packages/component) | Shared canvas UI + stamp/persist helpers |
+
+Both apps write to the **same shared Supabase canvas**.
+
+## WebMCP challenge
+
+The web app exposes WebMCP tools in sequence:
+
+- **`set-display-name`** (declarative form) — first visit only, while the name dialog is open. Sets the viewer’s public nickname. `stamp-grid` is **not** registered until this succeeds.
+- **`select-zone`** (imperative) — mark or clear the drawing rectangle. Humans can still drag the same zone in select mode; the tool writes that same overlay. Optional until a zone is needed.
+- **`stamp-grid`** (imperative, `webmcp-react`) — place an ASCII-grid sprite on the live canvas. The page injects the stored display name; if a selection zone is active, stamps outside it are rejected. Pixels appear live over Supabase Realtime.
+
+Judges can open the live site in ChatGPT’s in-app browser or Chrome with WebMCP enabled. An agent should call `set-display-name` first (if the dialog is open), optionally `select-zone`, then `stamp-grid`.
+
+## Prerequisites
 
 - Node.js 24+
-- HTTP tunnel such as [Alpic tunnel](https://docs.alpic.ai/cli/tunnel) if you want to test with remote MCP hosts like ChatGPT or Claude.ai.
+- pnpm 10+
 
-### Local Development
-
-#### 1. Install
+## Setup
 
 ```bash
-npm install
-# or
-yarn install
-# or
 pnpm install
-# or
-bun install
 ```
 
-#### 2. Start your local server
-
-Run the development server from the root directory:
+### MCP App
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp app/mcp/.env.example app/mcp/.env
+# fill SUPABASE_* (+ optional LULU_ADS_*)
+pnpm dev:mcp
 ```
 
-This command starts:
-- Your MCP server at `http://localhost:3000/mcp`.
-- Skybridge DevTools UI at `http://localhost:3000/`.
+- MCP: `http://localhost:3000/mcp`
+- Skybridge DevTools: `http://localhost:3000/`
 
-#### 3. Project structure
+### Web app
 
-```
-├── src/
-│   ├── server.ts         # Server entry point (tool + view registration)
-│   ├── helpers.ts        # Type-safe hooks (generateHelpers)
-│   ├── index.css         # Global styles
-│   └── views/            # React components (one file per view)
-│       └── canvas.tsx
-├── vite.config.ts        # Vite config (skybridge/vite plugin)
-├── alpic.json            # Deployment config
-└── package.json
+```bash
+cp app/web/.env.example app/web/.env
+# fill VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
+pnpm dev:web
 ```
 
-### Create your first view
+Open the printed localhost URL. With Chrome DevTools MCP / WebMCP support:
 
-#### 1. Add a new view
+1. `list_webmcp_tools` → should show `set-display-name` and `select-zone` (no name yet), or `select-zone` and `stamp-grid` (name already stored)
+2. If the name dialog is open, call `set-display-name`
+3. Optionally call `select-zone` with `{ "x": 10, "y": 10, "width": 32, "height": 32 }` — the fuchsia overlay should appear; the human select-mode button still works
+4. Call `stamp-grid` with a small grid (e.g. a 3×3 heart) inside that zone and watch the canvas update
 
-- Register a tool in `src/server.ts` with a unique name (e.g., `my-tool`) using [`registerTool`](https://docs.skybridge.tech/api-reference/register-tool), and attach a UI via the `view: { component: "my-view" }` field.
-- Create a matching React component at `src/views/my-view.tsx` with a **default export**. The Skybridge Vite plugin auto-mounts it — **the file name must match the `view.component` name exactly**.
+## Build
 
-#### 2. Edit views with Hot Module Replacement (HMR)
+```bash
+pnpm build:mcp   # Skybridge / Alpic
+pnpm build:web   # static site → app/web/dist
+```
 
-Edit and save components in `src/views/` — changes will appear instantly inside your App.
+## Deploy
 
-#### 3. Edit server code
+**Web (Netlify):** root [`netlify.toml`](netlify.toml) builds `@alpix/web`. Set site env:
 
-Modify `src/server.ts` and refresh the connection with your testing MCP Client to see the changes.
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
 
-### Testing your App
+**MCP (Alpic):** `pnpm deploy:mcp` from the workspace (runs in `app/mcp`).
 
-You can test your App locally by using our DevTools UI on `localhost:3000` while running the `pnpm dev` command.
+## License
 
-To test your app with other MCP Clients like ChatGPT, Claude or VSCode, see [Testing Your App](https://docs.skybridge.tech/quickstart/test-your-app).
-
-
-## Deploy to Production
-
-Skybridge is infrastructure vendor agnostic, and your app can be deployed on any cloud platform supporting MCP.
-
-The simplest way to deploy your App in minutes is [Alpic](https://alpic.ai/).
-1. Create an account on [Alpic platform](https://app.alpic.ai/). 
-2. Connect your GitHub repository to automatically deploy at each commit. 
-3. Use your remote App URL to connect it to MCP Clients, or use the Alpic Playground to easily test your App.
-
-## Resources
-- [Skybridge Documentation](https://docs.skybridge.tech/)
-- [Apps SDK Documentation](https://developers.openai.com/apps-sdk)
-- [MCP Apps Documentation](https://github.com/modelcontextprotocol/ext-apps/tree/main)
-- [Model Context Protocol Documentation](https://modelcontextprotocol.io/)
-- [Alpic Documentation](https://docs.alpic.ai/)
+[MIT](LICENSE)

@@ -1,0 +1,33 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@alpic-ai/ui/theme";
+@import "@alpix/component/styles.css";
+
+/* Make Tailwind scan @alpic-ai/ui so the utility classes used inside the
+   shipped components actually get generated. */
+/* pnpm keeps @alpic-ai/ui symlinked per package, not at the workspace root. */
+@source "../node_modules/@alpic-ai/ui/src";
+@source "../../../packages/component/src";
+
+/* Blur the canvas through the dialog overlay (Radix renders it with this
+   data-slot). The default alpic overlay only dims; we want a frosted-glass
+   look so the canvas behind is recognisable but de-emphasised. */
+[data-slot="dialog-overlay"] {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+}

@@ -1,34 +1,3 @@
-@import "tailwindcss";
-@import "tw-animate-css";
-@import "@alpic-ai/ui/theme";
-
-/* Make Tailwind scan @alpic-ai/ui so the utility classes used inside the
-   shipped components actually get generated. */
-@source "../node_modules/@alpic-ai/ui/src";
-
-/* Blur the canvas through the dialog overlay (Radix renders it with this
-   data-slot). The default alpic overlay only dims; we want a frosted-glass
-   look so the canvas behind is recognisable but de-emphasised. */
-[data-slot="dialog-overlay"] {
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-* {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  margin: 0;
-  padding: 0;
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    sans-serif;
-}
-
 .canvas-wrap {
   display: flex;
   flex-direction: column;
@@ -61,6 +30,20 @@ body {
 
 .canvas-outer.dragging {
   cursor: grabbing;
+}
+
+.canvas-loader {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--color-muted-foreground, #6b7280);
+  pointer-events: none;
 }
 
 .canvas-outer.select-mode {
@@ -257,4 +240,16 @@ body {
   .canvas-outer {
     background: #1f1f22;
   }
+}
+
+/* Hosts that opt into the Alpic dark theme drive the surround from the theme
+   base so the board reads as a lit sheet instead of a bright slab. */
+.dark .canvas-outer {
+  background: #050f10;
+}
+
+form:tool-form-active {
+  outline: 2px solid var(--color-primary, #e90060);
+  outline-offset: 4px;
+  border-radius: 0.75rem;
 }

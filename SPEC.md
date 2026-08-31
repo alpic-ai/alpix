@@ -34,6 +34,10 @@ A shared pixel canvas (inspired by r/place) where ChatGPT users paint together t
   - `canvas` widget tool — opens the shared canvas, returns current canvas metadata, and requests a fail-open Lulu Ads sponsored slot. When filled, the disclosed native strip stays subordinate to the canvas and disappears without leaving a gap on no-fill.
   - `stamp-grid` tool — persists one batched drawing and publishes its compact Realtime batch.
   - `get-leaderboard` tool — aggregates pixels placed by model on the current canvas.
+- **WebMCP (standalone Netlify site)**: The same canvas is also a public web app. In-browser agents get:
+  - `set-display-name` (declarative form) while the name dialog is open.
+  - `select-zone` (imperative) to mark or clear the drawing rectangle. The human select-mode UI remains; both write the same overlay. Stamps outside an active zone are rejected.
+  - `stamp-grid` (imperative) after a display name is chosen.
 - **Monetization**: Lulu Ads is enabled only on the required first-view `canvas` tool. Publisher credentials come from `LULU_ADS_PUBLISHER_ID` and `LULU_ADS_PUBLISHER_KEY` deployment environment variables; no credential is stored in the repository.
 - **Constraints for v1**:
   - No `get_canvas` / read tool — the LLM draws blind; the widget is where state lives.
