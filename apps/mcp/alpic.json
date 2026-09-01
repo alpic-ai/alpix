@@ -1,6 +1,5 @@
 {
   "$schema": "https://assets.alpic.ai/alpic.json",
-  "installCommand": "npm install -g pnpm@10.34.5 && pnpm --dir ../.. install --frozen-lockfile",
-  "buildCommand": "pnpm --dir ../.. --filter @alpix/mcp build",
-  "startCommand": "pnpm --dir ../.. --filter @alpix/mcp start"
+  "installCommand": "pnpm install",
+  "startCommand": "pnpm run --silent start"
 }

@@ -73,7 +73,7 @@ pnpm build:web   # static site → apps/web/dist
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
-**MCP (Alpic):** project **Root Directory** is `apps/mcp`. [`apps/mcp/alpic.json`](apps/mcp/alpic.json) installs the pnpm workspace from the repo root (Alpic otherwise runs `npm ci` and fails — there is no `package-lock.json`). Git deploys from `main`, or `pnpm deploy:mcp` from the workspace.
+**MCP (Alpic):** project **Root Directory** is `apps/mcp`. [`apps/mcp/alpic.json`](apps/mcp/alpic.json) sets `pnpm install` and `pnpm run --silent start`. Git deploys from `main`, or `pnpm deploy:mcp` from the workspace.
 
 ## License
 
