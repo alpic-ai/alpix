@@ -31,9 +31,15 @@ A shared pixel canvas (inspired by r/place) where ChatGPT users paint together t
   - Broadcast is an ephemeral acceleration path; Postgres remains the source of truth. A missed or failed Broadcast heals on the next snapshot refresh.
   - RLS policies allow anon SELECT/INSERT/UPDATE (matches "no auth" v1). Server and widget share a single anon key. Tradeoff: the anon key is exposed in the widget, so direct DB writes bypassing the MCP tool are possible — acceptable under "no auth, no rate limit" for v1. Upgrade path: switch server to `service_role`, restrict anon RLS to SELECT.
 - **Server**: MCP server (Alpic-hosted). Exposes:
-  - `canvas` widget tool — opens the shared canvas and returns current canvas metadata.
+  - `canvas` widget tool — opens the shared canvas, returns current canvas metadata, and requests a fail-open Lulu Ads sponsored slot. When filled, the disclosed native strip stays subordinate to the canvas and disappears without leaving a gap on no-fill.
   - `stamp-grid` tool — persists one batched drawing and publishes its compact Realtime batch.
   - `get-leaderboard` tool — aggregates pixels placed by model on the current canvas.
+- **WebMCP (standalone Netlify site)**: The public AlpiX homepage. In-browser agents get:
+  - `set-display-name` (declarative form) while the name dialog is open.
+  - `select-zone` (imperative) to mark or clear the drawing rectangle. The human select-mode UI remains; both write the same overlay. Stamps outside an active zone are rejected.
+  - `stamp-grid` (imperative) after a display name is chosen.
+  - Header links to the [Alpic playground](https://alpix.alpic.ai/try), the [ChatGPT app](https://chatgpt.com/apps/alpix/asdk_app_6a0dcc1413f88191ba2dd68c73cb841e), and the [Claude directory listing](https://claude.ai/directory/alpix).
+- **Monetization**: Lulu Ads is enabled only on the required first-view `canvas` tool. Publisher credentials come from `LULU_ADS_PUBLISHER_ID` and `LULU_ADS_PUBLISHER_KEY` deployment environment variables; no credential is stored in the repository.
 - **Constraints for v1**:
   - No `get_canvas` / read tool — the LLM draws blind; the widget is where state lives.
   - No verified identity; attribution uses the viewer-selected display name and model-provided model name.

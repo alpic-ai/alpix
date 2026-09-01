@@ -1,0 +1,255 @@
+.canvas-wrap {
+  display: flex;
+  flex-direction: column;
+  /* Inline: explicit height so the iframe auto-sizes to this. */
+  height: 600px;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+.canvas-wrap.fullscreen {
+  height: 100dvh;
+}
+
+@media (max-width: 639px) {
+  .canvas-wrap.fullscreen .toolbar-right {
+    padding-right: calc(env(safe-area-inset-right, 0px) + 44px);
+  }
+}
+
+.canvas-outer {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: #f5f5f5;
+  cursor: default;
+  touch-action: none;
+}
+
+.canvas-outer.dragging {
+  cursor: grabbing;
+}
+
+.canvas-loader {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--color-muted-foreground, #6b7280);
+  pointer-events: none;
+}
+
+.canvas-outer.select-mode {
+  cursor: crosshair;
+}
+
+.canvas-outer canvas {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: opacity 120ms ease-out;
+}
+
+.sponsored-strip {
+  position: relative;
+  display: flex;
+  min-height: 64px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+  padding: 10px 12px;
+  background: #171719;
+  color: #f8f8f8;
+  font-size: 12px;
+}
+
+.sponsored-strip::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  background: linear-gradient(
+    110deg,
+    transparent 25%,
+    rgb(255 255 255 / 10%) 45%,
+    transparent 65%
+  );
+  transform: translateX(-120%);
+  animation: sponsored-sheen 700ms ease-out 1;
+}
+
+.sponsored-disclosure {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.sponsored-chip {
+  border-radius: 999px;
+  padding: 4px 7px;
+  background: linear-gradient(135deg, #ff8a00, #ff5f2e);
+  color: #111;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.sponsored-via {
+  color: rgb(255 255 255 / 52%);
+  white-space: nowrap;
+}
+
+.sponsored-content {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.sponsored-logo {
+  position: relative;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #2b2b2f;
+  color: #ff9d38;
+  font-weight: 700;
+}
+
+.sponsored-logo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  object-fit: contain;
+}
+
+.sponsored-logo img.is-loaded {
+  opacity: 1;
+}
+
+.sponsored-content p {
+  min-width: 0;
+  flex: 1 1 auto;
+  margin: 0;
+  overflow: hidden;
+  color: rgb(255 255 255 / 82%);
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sponsored-content button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: #f4f4f5;
+  color: #18181b;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.sponsored-content button:hover {
+  background: #fff;
+}
+
+.sponsored-impression {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@keyframes sponsored-sheen {
+  to {
+    transform: translateX(120%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sponsored-strip::after {
+    animation: none;
+  }
+}
+
+@media (max-width: 440px) {
+  .sponsored-strip {
+    display: block;
+    padding: 0 12px 12px;
+  }
+
+  .sponsored-disclosure {
+    justify-content: space-between;
+    margin: 0 -12px 10px;
+    padding: 7px 12px;
+    background: linear-gradient(135deg, #ff8a00, #ff5f2e);
+  }
+
+  .sponsored-chip {
+    padding: 0;
+    background: none;
+  }
+
+  .sponsored-via {
+    color: rgb(17 17 17 / 70%);
+  }
+
+  .sponsored-content {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .sponsored-content p {
+    display: -webkit-box;
+    overflow: hidden;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+
+  .sponsored-content button {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .canvas-outer {
+    background: #1f1f22;
+  }
+}
+
+/* Hosts that opt into the Alpic dark theme drive the surround from the theme
+   base so the board reads as a lit sheet instead of a bright slab. */
+.dark .canvas-outer {
+  background: #050f10;
+}
+
+form:tool-form-active {
+  outline: 2px solid var(--color-primary, #e90060);
+  outline-offset: 4px;
+  border-radius: 0.75rem;
+}

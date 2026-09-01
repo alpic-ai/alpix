@@ -1,0 +1,63 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@alpic-ai/ui/theme";
+@import "@alpix/component/styles.css";
+
+/* pnpm keeps @alpic-ai/ui symlinked per package, not at the workspace root. */
+@source "../node_modules/@alpic-ai/ui/src";
+@source "../../../packages/component/src";
+
+[data-slot="dialog-overlay"] {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+/* Two faint brand halos bleeding in from the top edge, echoing the Beacon
+   landing page without competing with the canvas for attention. */
+.app-backdrop::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      60rem 26rem at 12% -8%,
+      color-mix(in oklab, var(--color-primary) 16%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      52rem 24rem at 88% -12%,
+      color-mix(in oklab, var(--color-cta-accent) 10%, transparent),
+      transparent 70%
+    );
+}
+
+/* The component ships a fixed 600px height for MCP inline embedding; inside the
+   card the canvas must instead fill whatever space the layout gives it. */
+.app-canvas.canvas-wrap,
+.app-canvas.canvas-wrap.fullscreen {
+  height: 100%;
+}

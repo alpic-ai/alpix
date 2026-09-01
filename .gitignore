@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env*
 !.env.example
+!**/.env.example
 .DS_Store
 *.tsbuildinfo
 
@@ -11,3 +12,5 @@ dist/
 # Alpic internal deployment config — not needed by contributors
 .alpic/
 .vercel/
+# Local Netlify folder
+.netlify

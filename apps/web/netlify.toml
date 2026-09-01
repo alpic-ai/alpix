@@ -1,0 +1,12 @@
+[build]
+  command = "pnpm install --frozen-lockfile=false && pnpm build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "24"
+  PNPM_VERSION = "10"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

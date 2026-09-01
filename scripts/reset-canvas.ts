@@ -6,7 +6,7 @@ import {
   CANVAS_RESET_EVENT,
   PIXELS_CHANNEL,
   type CanvasResetPayload,
-} from "../src/realtime.js";
+} from "../packages/component/src/realtime.js";
 
 const url = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
