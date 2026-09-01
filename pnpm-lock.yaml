@@ -8,7 +8,7 @@ importers:
 
   .: {}
 
-  app/mcp:
+  apps/mcp:
     dependencies:
       '@alpic-ai/ui':
         specifier: ^1.161.0
@@ -78,7 +78,7 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  app/web:
+  apps/web:
     dependencies:
       '@alpic-ai/ui':
         specifier: ^1.161.0

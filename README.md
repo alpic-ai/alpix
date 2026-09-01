@@ -6,8 +6,8 @@ This repo is a **pnpm workspace** with:
 
 | Package | Path | Role |
 | --- | --- | --- |
-| `@alpix/mcp` | [`app/mcp`](app/mcp) | Skybridge MCP / ChatGPT App (Alpic) |
-| `@alpix/web` | [`app/web`](app/web) | Standalone WebMCP site (Netlify) |
+| `@alpix/mcp` | [`apps/mcp`](apps/mcp) | Skybridge MCP / ChatGPT App (Alpic) |
+| `@alpix/web` | [`apps/web`](apps/web) | Standalone WebMCP site (Netlify) |
 | `@alpix/component` | [`packages/component`](packages/component) | Shared canvas UI + stamp/persist helpers |
 
 Both apps write to the **same shared Supabase canvas**.
@@ -36,7 +36,7 @@ pnpm install
 ### MCP App
 
 ```bash
-cp app/mcp/.env.example app/mcp/.env
+cp apps/mcp/.env.example apps/mcp/.env
 # fill SUPABASE_* (+ optional LULU_ADS_*)
 pnpm dev:mcp
 ```
@@ -47,7 +47,7 @@ pnpm dev:mcp
 ### Web app
 
 ```bash
-cp app/web/.env.example app/web/.env
+cp apps/web/.env.example apps/web/.env
 # fill VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
 pnpm dev:web
 ```
@@ -63,17 +63,17 @@ Open the printed localhost URL. With Chrome DevTools MCP / WebMCP support:
 
 ```bash
 pnpm build:mcp   # Skybridge / Alpic
-pnpm build:web   # static site → app/web/dist
+pnpm build:web   # static site → apps/web/dist
 ```
 
 ## Deploy
 
-**Web (Netlify):** root [`netlify.toml`](netlify.toml) builds `@alpix/web`. Set site env:
+**Web (Netlify):** set the site **Base directory** to `apps/web`. Config lives in [`apps/web/netlify.toml`](apps/web/netlify.toml) and publishes `dist`. Set site env:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
-**MCP (Alpic):** `pnpm deploy:mcp` from the workspace (runs in `app/mcp`).
+**MCP (Alpic):** `pnpm deploy:mcp` from the workspace (runs in `apps/mcp`).
 
 ## License
 

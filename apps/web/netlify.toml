@@ -1,6 +1,6 @@
 [build]
-  command = "pnpm install --frozen-lockfile=false && pnpm --filter @alpix/web build"
-  publish = "app/web/dist"
+  command = "pnpm install --frozen-lockfile=false && pnpm build"
+  publish = "dist"
 
 [build.environment]
   NODE_VERSION = "24"

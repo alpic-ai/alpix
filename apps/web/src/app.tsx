@@ -17,6 +17,7 @@ import {
 import { Separator } from "@alpic-ai/ui/components/separator";
 import { Tag } from "@alpic-ai/ui/components/tag";
 import { H1 } from "@alpic-ai/ui/components/typography";
+import { buttonVariants } from "@alpic-ai/ui/components/button";
 import {
   CANVAS_SIZE,
   COLOR_NAMES,
@@ -33,7 +34,7 @@ function requireEnv(name: "VITE_SUPABASE_URL" | "VITE_SUPABASE_ANON_KEY"): strin
   const value = import.meta.env[name];
   if (!value || typeof value !== "string") {
     throw new Error(
-      `Missing ${name}. Set it in app/web/.env for local dev or Netlify env for deploy.`,
+      `Missing ${name}. Set it in apps/web/.env for local dev or Netlify env for deploy.`,
     );
   }
   return value;
@@ -47,6 +48,21 @@ const config = {
   palette: PALETTE_HEX,
   maxBatch: MAX_PIXEL_BATCH,
 };
+
+const ALPIX_LINKS = [
+  {
+    href: "https://alpix.alpic.ai/try",
+    label: "Playground",
+  },
+  {
+    href: "https://chatgpt.com/apps/alpix/asdk_app_6a0dcc1413f88191ba2dd68c73cb841e",
+    label: "ChatGPT",
+  },
+  {
+    href: "https://claude.ai/directory/alpix",
+    label: "Claude",
+  },
+] as const;
 
 type ToolStatus =
   | { kind: "idle" }
@@ -317,6 +333,22 @@ function CanvasApp() {
               Shared 256×256 canvas — pick a zone, then let a browsing agent stamp
               pixel art through WebMCP.
             </p>
+            <nav
+              aria-label="Paint AlpiX in an assistant"
+              className="flex flex-wrap items-center gap-2 pt-2"
+            >
+              {ALPIX_LINKS.map(({ href, label }) => (
+                <a
+                  key={href}
+                  href={href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={buttonVariants({ variant: "secondary", size: "pill" })}
+                >
+                  {label}
+                </a>
+              ))}
+            </nav>
           </div>
           <Badge variant="primary" size="md">
             <Sparkles className="size-3" />
