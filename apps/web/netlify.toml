@@ -1,9 +1,10 @@
 [build]
-  command = "pnpm install --frozen-lockfile=false && pnpm build"
+  # Site package directory is apps/web; lockfile and workspace live at the repo root.
+  command = "cd ../.. && corepack enable && pnpm install --frozen-lockfile=false && pnpm --filter @alpix/web build"
   publish = "dist"
 
 [build.environment]
-  NODE_VERSION = "24"
+  NODE_VERSION = "24.15.0"
   PNPM_VERSION = "10"
 
 [[redirects]]
