@@ -68,12 +68,12 @@ pnpm build:web   # static site → apps/web/dist
 
 ## Deploy
 
-**Web (Netlify):** set the site **Base directory** to `apps/web`. Config lives in [`apps/web/netlify.toml`](apps/web/netlify.toml) and publishes `dist`. Set site env:
+**Web (Netlify):** set the site **Base directory** / package directory to `apps/web`. Config lives in [`apps/web/netlify.toml`](apps/web/netlify.toml); the build `cd`s to the workspace root, then publishes `apps/web/dist`. Set site env:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
-**MCP (Alpic):** `pnpm deploy:mcp` from the workspace (runs in `apps/mcp`).
+**MCP (Alpic):** project **Root Directory** is `apps/mcp`. [`apps/mcp/alpic.json`](apps/mcp/alpic.json) installs the pnpm workspace from the repo root (Alpic otherwise runs `npm ci` and fails — there is no `package-lock.json`). Git deploys from `main`, or `pnpm deploy:mcp` from the workspace.
 
 ## License
 
