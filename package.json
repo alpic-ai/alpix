@@ -3,18 +3,6 @@
   "version": "0.0.1",
   "private": true,
   "description": "AlpiX collaborative pixel canvas — MCP App + WebMCP web app",
-  "scripts": {
-    "dev": "pnpm --filter @alpix/web dev",
-    "dev:mcp": "pnpm --filter @alpix/mcp dev",
-    "dev:web": "pnpm --filter @alpix/web dev",
-    "build": "pnpm --filter @alpix/mcp build",
-    "build:mcp": "pnpm --filter @alpix/mcp build",
-    "build:web": "pnpm --filter @alpix/web build",
-    "build:all": "pnpm -r --filter @alpix/component --filter @alpix/mcp --filter @alpix/web build",
-    "start": "pnpm --filter @alpix/mcp start",
-    "start:mcp": "pnpm --filter @alpix/mcp start",
-    "deploy:mcp": "pnpm --filter @alpix/mcp deploy"
-  },
   "engines": {
     "node": ">=24.14.1"
   },
