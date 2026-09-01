@@ -73,7 +73,7 @@ pnpm build:web   # static site → apps/web/dist
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
-**MCP (Alpic):** project **Root Directory** is `apps/mcp`. [`apps/mcp/alpic.json`](apps/mcp/alpic.json) sets `pnpm install` and `pnpm run --silent start`. Git deploys from `main`, or `pnpm deploy:mcp` from the workspace.
+**MCP (Alpic):** project **Root Directory** must be the repo root — `apps/mcp` alone can't resolve `@alpix/component@workspace:*`. [`alpic.json`](alpic.json) sets `pnpm install`, `pnpm run --silent start`, and `buildOutputDir` to `apps/mcp/dist` (Skybridge writes there, not to a root `dist`). The root `build` and `start` scripts target `@alpix/mcp`. Git deploys from `main`, or `pnpm deploy:mcp` from the workspace.
 
 ## License
 

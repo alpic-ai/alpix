@@ -8,7 +8,7 @@ import {
   MAX_PIXEL_BATCH,
   PALETTE_HEX,
   stampGrid,
-} from "@alpix/component";
+} from "@alpix/component/core";
 import { getSupabase, getSupabasePublic } from "./supabase.js";
 
 const MAX_BATCH = MAX_PIXEL_BATCH;

@@ -4,11 +4,22 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./src/core.ts",
+      "development": "./src/core.ts",
+      "default": "./dist/core.js"
+    },
     "./styles.css": "./src/styles.css"
   },
+  "files": ["dist", "src"],
   "scripts": {
-    "build": "tsc -p tsconfig.json --noEmit"
+    "build": "tsc -p tsconfig.build.json && cp src/styles.css dist/styles.css",
+    "typecheck": "tsc -p tsconfig.json"
   },
   "peerDependencies": {
     "react": "^19.0.0",
