@@ -8,10 +8,13 @@
     "dev": "skybridge dev",
     "build": "skybridge build",
     "start": "skybridge start",
-    "deploy": "alpic deploy"
+    "deploy": "alpic deploy",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@alpic-ai/ui": "^1.161.0",
+    "@alpix/auth": "workspace:*",
     "@alpix/component": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@supabase/supabase-js": "^2.112.0",

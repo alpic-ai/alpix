@@ -1,0 +1,34 @@
+{
+  "name": "@alpix/auth",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Descope session validation shared by the AlpiX web app and MCP server",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./public": {
+      "types": "./src/public-config.ts",
+      "development": "./src/public-config.ts",
+      "default": "./dist/public-config.js"
+    }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@descope/node-sdk": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.0"
+  }
+}

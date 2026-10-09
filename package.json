@@ -6,5 +6,18 @@
   "engines": {
     "node": ">=24.14.1"
   },
-  "packageManager": "pnpm@10.34.5"
+  "packageManager": "pnpm@10.34.5",
+  "scripts": {
+    "dev:mcp": "pnpm --filter @alpix/mcp dev",
+    "dev:web": "pnpm --filter @alpix/web dev",
+    "build": "pnpm -r --if-present run build",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "lint": "pnpm -r --if-present run lint",
+    "test": "pnpm -r --if-present run test",
+    "build:mcp": "pnpm --filter @alpix/mcp... build",
+    "build:web": "pnpm --filter @alpix/web... build"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
 }
