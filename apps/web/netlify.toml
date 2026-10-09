@@ -1,11 +1,14 @@
 [build]
   # Site package directory is apps/web; lockfile and workspace live at the repo root.
-  command = "cd ../.. && corepack enable && pnpm install --frozen-lockfile=false && pnpm --filter @alpix/web build"
+  command = "cd ../.. && corepack enable && pnpm install --frozen-lockfile=false && pnpm --filter @alpix/web... build"
   publish = "dist"
 
 [build.environment]
   NODE_VERSION = "24.15.0"
   PNPM_VERSION = "10"
+
+[functions]
+  directory = "netlify/functions"
 
 [[redirects]]
   from = "/*"

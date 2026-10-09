@@ -23,7 +23,11 @@ A shared pixel canvas (inspired by r/place) where ChatGPT users paint together t
 ## Product Context
 - **Canvas**: 256×256 pixels, one current shared canvas plus retained historical canvases.
 - **Palette**: Fixed 32-color palette (r/place-style). Tool accepts a color index or named color from this palette — not arbitrary hex (keeps LLM output clean and the widget rendering cheap).
-- **Auth**: No account authentication. Viewers choose a display name used for drawing attribution; there is no rate limiting in v1.
+- **Auth**: Descope accounts on the standalone web app, plus the existing public display name for drawing attribution. There is no rate limiting in v1.
+  - Sign-up, sign-in, and sign-out use the hosted Descope flow `sign-up-or-in` (`@descope/react-sdk`). `/sign-in` runs the flow. `/account` is protected: the browser must hold a Descope session, then `GET /api/session` validates the session JWT with `@descope/node-sdk` (`validateSession`, audience = project ID unless `DESCOPE_SESSION_AUDIENCE` is set).
+  - Configuration is `DESCOPE_PROJECT_ID` (public). The web build also accepts `VITE_DESCOPE_PROJECT_ID`. A management key is not used. If the project ID is missing, the web app shows a configuration error and `/api/session` returns 503.
+  - The canvas, `set-display-name`, `select-zone`, and `stamp-grid` stay available without an account so the WebMCP challenge and the ChatGPT widget keep working. Drawings are still attributed to the viewer-chosen nickname, not the Descope user id.
+  - The browser calls same-origin `/api/session` (Vite in dev, a Netlify function in production). The MCP server mounts the same route for local and self-hosted Skybridge. Alpic Cloud only routes `/mcp`, so that copy is not the production browser endpoint.
 - **Storage**: Supabase
   - `drawings` stores one logical drawing/tool call, `placements` is the append-only per-pixel event log, and `pixels` is the current-state projection upserted on `(x, y)`.
   - After persistence succeeds, the server sends one public Supabase Realtime Broadcast containing the drawing ID and compact `[x, y, color]` tuples. The administrative reset script sends one `canvas-reset` Broadcast after clearing the projection.
@@ -42,6 +46,6 @@ A shared pixel canvas (inspired by r/place) where ChatGPT users paint together t
 - **Monetization**: Lulu Ads is enabled only on the required first-view `canvas` tool. Publisher credentials come from `LULU_ADS_PUBLISHER_ID` and `LULU_ADS_PUBLISHER_KEY` deployment environment variables; no credential is stored in the repository.
 - **Constraints for v1**:
   - No `get_canvas` / read tool — the LLM draws blind; the widget is where state lives.
-  - No verified identity; attribution uses the viewer-selected display name and model-provided model name.
+  - Canvas attribution is still the viewer-selected display name plus the model-provided model name. Descope verifies the account behind `/account` and `/api/session` only.
   - No rate limiting, no moderation.
   - Designed so canvas size and palette can be bumped later without schema breaks.

@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { handleSessionRequest } from "@alpix/auth";
 import { LuluAds } from "lulu-ads";
 import { McpServer } from "skybridge/server";
 import { z } from "zod";
@@ -325,6 +326,37 @@ const server = new McpServer(
       };
     },
   );
+
+// Local and self-hosted Skybridge. Alpic Cloud only routes /mcp; the web app
+// serves the same handler at /api/session for the browser.
+server.express.get(
+  "/api/session",
+  (
+    req: { method: string; header(name: string): string | undefined },
+    res: {
+      status(code: number): void;
+      setHeader(name: string, value: string): void;
+      send(body: Buffer): void;
+    },
+    next: (error?: unknown) => void,
+  ) => {
+    const authorization = req.header("authorization") ?? "";
+    void handleSessionRequest(
+      new Request("http://127.0.0.1/api/session", {
+        method: req.method,
+        headers: authorization ? { authorization } : {},
+      }),
+    )
+      .then(async (response) => {
+        res.status(response.status);
+        response.headers.forEach((value, key) => {
+          res.setHeader(key, value);
+        });
+        res.send(Buffer.from(await response.arrayBuffer()));
+      })
+      .catch(next);
+  },
+);
 
 export default await server.run();
 

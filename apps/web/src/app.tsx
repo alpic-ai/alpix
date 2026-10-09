@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState, type RefObject } from "react";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { createClient } from "@supabase/supabase-js";
 import { WebMCPProvider, useMcpTool } from "webmcp-react";
 import { z } from "zod";
@@ -29,6 +30,9 @@ import {
   type PixelCanvasHandle,
   type Rect,
 } from "@alpix/component";
+import { RequireSession } from "./account.js";
+import { AuthControls } from "./auth-controls.js";
+import { SignInPage } from "./sign-in.js";
 
 function requireEnv(name: "VITE_SUPABASE_URL" | "VITE_SUPABASE_ANON_KEY"): string {
   const value = import.meta.env[name];
@@ -348,6 +352,7 @@ function CanvasApp() {
                   {label}
                 </a>
               ))}
+              <AuthControls />
             </nav>
           </div>
           <Badge variant="primary" size="md">
@@ -429,7 +434,14 @@ function CanvasApp() {
 export function App() {
   return (
     <WebMCPProvider name="alpix" version="0.1.0">
-      <CanvasApp />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<CanvasApp />} />
+          <Route path="/sign-in" element={<SignInPage />} />
+          <Route path="/account" element={<RequireSession />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
     </WebMCPProvider>
   );
 }
