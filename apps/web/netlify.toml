@@ -7,6 +7,14 @@
   NODE_VERSION = "24.15.0"
   PNPM_VERSION = "10"
 
+[functions]
+  directory = "netlify/functions"
+
+[[redirects]]
+  from = "/api/me"
+  to = "/.netlify/functions/me"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

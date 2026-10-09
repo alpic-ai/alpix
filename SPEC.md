@@ -23,7 +23,7 @@ A shared pixel canvas (inspired by r/place) where ChatGPT users paint together t
 ## Product Context
 - **Canvas**: 256×256 pixels, one current shared canvas plus retained historical canvases.
 - **Palette**: Fixed 32-color palette (r/place-style). Tool accepts a color index or named color from this palette — not arbitrary hex (keeps LLM output clean and the widget rendering cheap).
-- **Auth**: No account authentication. Viewers choose a display name used for drawing attribution; there is no rate limiting in v1.
+- **Auth**: Drawing does not require an account. Viewers still choose a display name for attribution, and there is no rate limiting in v1. Descope is an optional identity layer on the standalone site: the `sign-up-or-in` flow signs users up or in, `/account` is a protected route, and `GET /api/me` validates the Descope session JWT with `@descope/node-sdk` (`validateSession`, audience = project ID). Canvas, stamp, and leaderboard tools stay callable without a session so the shared world and WebMCP challenge keep working. No management key.
 - **Storage**: Supabase
   - `drawings` stores one logical drawing/tool call, `placements` is the append-only per-pixel event log, and `pixels` is the current-state projection upserted on `(x, y)`.
   - After persistence succeeds, the server sends one public Supabase Realtime Broadcast containing the drawing ID and compact `[x, y, color]` tuples. The administrative reset script sends one `canvas-reset` Broadcast after clearing the projection.

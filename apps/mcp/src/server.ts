@@ -9,6 +9,7 @@ import {
   PALETTE_HEX,
   stampGrid,
 } from "@alpix/component/core";
+import { descopeSessionRoute } from "./session-route.js";
 import { getSupabase, getSupabasePublic } from "./supabase.js";
 
 const MAX_BATCH = MAX_PIXEL_BATCH;
@@ -324,7 +325,8 @@ const server = new McpServer(
         content: [{ type: "text", text }],
       };
     },
-  );
+  )
+  .use("/api/me", descopeSessionRoute);
 
 export default await server.run();
 
