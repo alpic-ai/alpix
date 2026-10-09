@@ -5,6 +5,8 @@
   "description": "AlpiX MCP App (Skybridge)",
   "type": "module",
   "scripts": {
+    "predev": "pnpm --filter @alpix/auth build",
+    "prebuild": "pnpm --filter @alpix/auth build",
     "dev": "skybridge dev",
     "build": "skybridge build",
     "start": "skybridge start",
@@ -12,6 +14,7 @@
   },
   "dependencies": {
     "@alpic-ai/ui": "^1.161.0",
+    "@alpix/auth": "workspace:*",
     "@alpix/component": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@supabase/supabase-js": "^2.112.0",

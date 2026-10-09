@@ -1,0 +1,28 @@
+{
+  "name": "@alpix/auth",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Descope session validation for AlpiX",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/session.test.ts"
+  },
+  "dependencies": {
+    "@descope/node-sdk": "^2.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "tsx": "^4.23.5",
+    "typescript": "^7.0.2"
+  }
+}

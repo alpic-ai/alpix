@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type RefObject } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { Navigate, Route, Routes } from "react-router";
 import { WebMCPProvider, useMcpTool } from "webmcp-react";
 import { z } from "zod";
 import { BoxSelect, Sparkles } from "lucide-react";
@@ -29,6 +30,9 @@ import {
   type PixelCanvasHandle,
   type Rect,
 } from "@alpix/component";
+import { HeaderAuth } from "./auth/header-auth.js";
+import { DescopeRoot } from "./auth/provider.js";
+import { AccountRoute, LoginRoute } from "./auth/routes.js";
 
 function requireEnv(name: "VITE_SUPABASE_URL" | "VITE_SUPABASE_ANON_KEY"): string {
   const value = import.meta.env[name];
@@ -350,12 +354,15 @@ function CanvasApp() {
               ))}
             </nav>
           </div>
-          <Badge variant="primary" size="md">
-            <Sparkles className="size-3" />
-            {userName
-              ? "WebMCP · select-zone · stamp-grid"
-              : "WebMCP · set-display-name · select-zone"}
-          </Badge>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <HeaderAuth />
+            <Badge variant="primary" size="md">
+              <Sparkles className="size-3" />
+              {userName
+                ? "WebMCP · select-zone · stamp-grid"
+                : "WebMCP · set-display-name · select-zone"}
+            </Badge>
+          </div>
         </header>
 
         <Card className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden py-0 shadow-sm">
@@ -428,8 +435,15 @@ function CanvasApp() {
 
 export function App() {
   return (
-    <WebMCPProvider name="alpix" version="0.1.0">
-      <CanvasApp />
-    </WebMCPProvider>
+    <DescopeRoot>
+      <WebMCPProvider name="alpix" version="0.1.0">
+        <Routes>
+          <Route path="/" element={<CanvasApp />} />
+          <Route path="/login" element={<LoginRoute />} />
+          <Route path="/account" element={<AccountRoute />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </WebMCPProvider>
+    </DescopeRoot>
   );
 }
