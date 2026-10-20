@@ -106,6 +106,7 @@ export const app = new Skybridge({
             csp: {
               connectDomains: [
                 `https://${SUPABASE_HOST}`,
+                `wss://${SUPABASE_HOST}`,
                 LULU_ADS_ORIGIN,
               ],
               resourceDomains: [LULU_ADS_ORIGIN],
