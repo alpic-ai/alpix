@@ -2,7 +2,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { skybridge } from "skybridge/vite";
+import { skybridge } from "@skybridge/vite-plugin";
 import { defineConfig } from "vite";
 
 const require = createRequire(import.meta.url);
