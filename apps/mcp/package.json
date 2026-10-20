@@ -11,6 +11,7 @@
     "deploy": "alpic deploy"
   },
   "dependencies": {
+    "@alpic-ai/insights": "0.0.0-dev.gb08ea3f",
     "@alpic-ai/ui": "^1.161.0",
     "@alpix/component": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -19,14 +20,14 @@
     "lulu-ads": "^0.9.5",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "skybridge": "^2.0.4",
+    "skybridge": "0.0.0-next.a297d2a",
     "tw-animate-css": "^1.4.0",
     "vite": "^8.2.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@skybridge/devtools": "^2.0.4",
-    "@skybridge/vite-plugin": "^2.0.4",
+    "@skybridge/devtools": "0.0.0-next.a297d2a",
+    "@skybridge/vite-plugin": "0.0.0-next.a297d2a",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.18",
