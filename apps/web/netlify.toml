@@ -1,7 +1,7 @@
 [build]
   # Netlify runs this from the repo root (package path apps/web), where the lockfile and workspace live.
   command = "corepack enable && pnpm install --frozen-lockfile=false && pnpm --filter @alpix/web... build"
-  publish = "dist"
+  publish = "apps/web/dist"
 
 [build.environment]
   NODE_VERSION = "24.15.0"
