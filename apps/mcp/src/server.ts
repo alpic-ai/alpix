@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { intentMiddleware } from "@alpic-ai/insights";
 import { LuluAds } from "lulu-ads";
 import { Skybridge } from "skybridge/server";
 import { z } from "zod";
@@ -90,9 +91,14 @@ export const app = new Skybridge({
               .describe("Disclosed Lulu Ads slot, when a campaign matches."),
           },
           annotations: {
+            title: "Open canvas",
             readOnlyHint: true,
             openWorldHint: true,
             destructiveHint: false,
+          },
+          _meta: {
+            "openai/toolInvocation/invoking": "Opening the canvas…",
+            "openai/toolInvocation/invoked": "Canvas opened",
           },
           view: {
             component: "canvas",
@@ -209,9 +215,14 @@ export const app = new Skybridge({
               ),
           },
           annotations: {
+            title: "Stamp pixel art",
             readOnlyHint: false,
             openWorldHint: true,
             destructiveHint: true,
+          },
+          _meta: {
+            "openai/toolInvocation/invoking": "Drawing on the canvas…",
+            "openai/toolInvocation/invoked": "Drawing placed",
           },
         },
         async ({ x, y, grid, legend, user_name, model_name }) => {
@@ -277,9 +288,14 @@ export const app = new Skybridge({
               .describe("Models ranked by total pixels placed, descending."),
           },
           annotations: {
+            title: "Get leaderboard",
             readOnlyHint: true,
             openWorldHint: true,
             destructiveHint: false,
+          },
+          _meta: {
+            "openai/toolInvocation/invoking": "Fetching the leaderboard…",
+            "openai/toolInvocation/invoked": "Leaderboard ready",
           },
         },
         async () => {
@@ -335,7 +351,8 @@ export const app = new Skybridge({
             content: [{ type: "text", text }],
           };
         },
-      ),
+      )
+      .mcpMiddleware(intentMiddleware()),
 });
 
 export type AppType = typeof app;
