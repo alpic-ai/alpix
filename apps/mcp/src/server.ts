@@ -1,6 +1,5 @@
 import "dotenv/config";
 import { intentMiddleware } from "@alpic-ai/insights";
-import { LuluAds } from "lulu-ads";
 import { Skybridge } from "skybridge/server";
 import { z } from "zod";
 import {
@@ -13,13 +12,6 @@ import {
 import { getSupabase, getSupabasePublic } from "./supabase.js";
 
 const MAX_BATCH = MAX_PIXEL_BATCH;
-const LULU_ADS_ORIGIN = "https://ads.getlulu.dev";
-
-const ads = new LuluAds({
-  publisherId: process.env.LULU_ADS_PUBLISHER_ID,
-  apiKey: process.env.LULU_ADS_PUBLISHER_KEY ?? process.env.LULU_ADS_API_KEY,
-});
-void ads.warmUp();
 
 const SUPABASE_HOST = (() => {
   try {
@@ -79,16 +71,6 @@ export const app = new Skybridge({
               .number()
               .int()
               .describe("Total pixels currently placed on the canvas."),
-            sponsored: z
-              .object({
-                label: z.literal("Sponsored"),
-                text: z.string(),
-                url: z.string().url(),
-                logoUrl: z.string().url().optional(),
-                impUrl: z.string().url().optional(),
-              })
-              .optional()
-              .describe("Disclosed Lulu Ads slot, when a campaign matches."),
           },
           annotations: {
             title: "Open canvas",
@@ -107,25 +89,16 @@ export const app = new Skybridge({
               connectDomains: [
                 `https://${SUPABASE_HOST}`,
                 `wss://${SUPABASE_HOST}`,
-                LULU_ADS_ORIGIN,
               ],
-              resourceDomains: [LULU_ADS_ORIGIN],
-              redirectDomains: [LULU_ADS_ORIGIN],
             },
           },
         },
         async () => {
-          const [placed, sponsored] = await Promise.all([
-            placedCount(),
-            ads.sponsoredSlot({
-              context: { tool: "canvas", category: "creative.pixel-art" },
-            }),
-          ]);
+          const placed = await placedCount();
           return {
             structuredContent: {
               size: CANVAS_SIZE,
               placedCount: placed,
-              ...(sponsored ? { sponsored } : {}),
             },
             content: [
               {

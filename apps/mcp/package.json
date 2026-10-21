@@ -17,7 +17,6 @@
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@supabase/supabase-js": "^2.112.0",
     "dotenv": "^17.4.2",
-    "lulu-ads": "^0.9.5",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "skybridge": "0.0.0-next.a297d2a",

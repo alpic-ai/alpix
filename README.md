@@ -37,7 +37,7 @@ pnpm install
 
 ```bash
 cp apps/mcp/.env.example apps/mcp/.env
-# fill SUPABASE_* (+ optional LULU_ADS_*)
+# fill SUPABASE_*
 pnpm dev:mcp
 ```
 

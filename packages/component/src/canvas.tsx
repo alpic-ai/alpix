@@ -61,21 +61,11 @@ export type DisplayMode = "inline" | "fullscreen" | "pip" | "modal";
 
 export type Rect = { x: number; y: number; w: number; h: number };
 
-export type SponsoredSlot = {
-  label: "Sponsored";
-  text: string;
-  url: string;
-  logoUrl?: string;
-  impUrl?: string;
-};
-
 export type PixelCanvasProps = {
   config: CanvasConfig;
   displayMode?: DisplayMode;
   onDisplayModeChange?: (mode: DisplayMode) => void;
   showDisplayModeControls?: boolean;
-  sponsored?: SponsoredSlot | null;
-  onOpenExternal?: (url: string) => void;
   onSelectionChange?: (selection: Rect | null) => void;
   onUserNameChange?: (userName: string | null) => void;
   statusMessage?: string | null;
@@ -169,56 +159,6 @@ function isPixelBatchPayload(value: unknown): value is PixelBatchPayload {
   );
 }
 
-function SponsoredStrip({
-  sponsored,
-  onOpenExternal,
-}: {
-  sponsored: SponsoredSlot;
-  onOpenExternal?: (url: string) => void;
-}) {
-  const [logoLoaded, setLogoLoaded] = useState(false);
-
-  useEffect(() => setLogoLoaded(false), [sponsored.logoUrl]);
-
-  return (
-    <aside className="sponsored-strip" aria-label="Sponsored content">
-      <div className="sponsored-disclosure">
-        <span className="sponsored-chip">{sponsored.label}</span>
-        <span className="sponsored-via">via Lulu Ads</span>
-      </div>
-      <div className="sponsored-content">
-        <div className="sponsored-logo" aria-hidden="true">
-          <span>{sponsored.text.trim().charAt(0).toUpperCase() || "A"}</span>
-          {sponsored.logoUrl && (
-            <img
-              src={sponsored.logoUrl}
-              alt=""
-              className={logoLoaded ? "is-loaded" : ""}
-              onLoad={() => setLogoLoaded(true)}
-              onError={() => setLogoLoaded(false)}
-            />
-          )}
-        </div>
-        <p>{sponsored.text}</p>
-        <button
-          type="button"
-          onClick={() => onOpenExternal?.(sponsored.url)}
-        >
-          Learn more
-        </button>
-      </div>
-      {sponsored.impUrl && (
-        <img
-          className="sponsored-impression"
-          src={sponsored.impUrl}
-          alt=""
-          aria-hidden="true"
-        />
-      )}
-    </aside>
-  );
-}
-
 export const PixelCanvas = forwardRef<PixelCanvasHandle, PixelCanvasProps>(
   function PixelCanvas(
     {
@@ -226,8 +166,6 @@ export const PixelCanvas = forwardRef<PixelCanvasHandle, PixelCanvasProps>(
       displayMode: displayModeProp,
       onDisplayModeChange,
       showDisplayModeControls = false,
-      sponsored = null,
-      onOpenExternal,
       onSelectionChange,
       onUserNameChange,
       statusMessage = null,
@@ -1441,10 +1379,6 @@ export const PixelCanvas = forwardRef<PixelCanvasHandle, PixelCanvasProps>(
           })()}
         </div>
       </div>
-
-      {sponsored && !isPip && (
-        <SponsoredStrip sponsored={sponsored} onOpenExternal={onOpenExternal} />
-      )}
 
       <Dialog
         open={nameModalOpen}
