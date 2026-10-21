@@ -8,5 +8,4 @@ export {
   type CanvasConfig,
   type DisplayMode,
   type Rect,
-  type SponsoredSlot,
 } from "./canvas.js";
